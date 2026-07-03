@@ -387,11 +387,22 @@ Object.entries(categories).forEach(([key, cat]) => {
 // ===== demo incidents — عدّل هالمصفوفة لتحديث الخريطة =====
 const incidents = [];
 
+// ===== حدود المنطقة المسموحة: لبنان + إسرائيل بس =====
+const LEB_ISR_BOUNDS = L.latLngBounds(
+    [29.30, 34.10], // جنوب غرب: تحت إيلات
+    [34.75, 36.75]  // شمال شرق: فوق لبنان
+);
+
 // ===== map init: LIGHT clear style with visible town names =====
 const map = L.map('south-map', {
     zoomControl: false,
-    attributionControl: false
-}).setView([33.20, 35.35], 10);
+    attributionControl: false,
+    maxBounds: LEB_ISR_BOUNDS,
+    maxBoundsViscosity: 1.0,
+    minZoom: 7
+}).setView([32.35, 35.30], 8);
+
+map.fitBounds(LEB_ISR_BOUNDS);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
