@@ -398,31 +398,6 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     subdomains: ['a','b','c']
 }).addTo(map);
 
-// ===== منطقة جنوب لبنان الحدودية (لبنان - إسرائيل) — خط أصفر =====
-const southZoneCoords = [
-    [33.095, 35.104], // الناقورة على الساحل
-    [33.100, 35.148], // علما الشعب
-    [33.107, 35.372], // عيتا الشعب
-    [33.096, 35.470], // كفركلا
-    [33.095, 35.591], // منطقة المطلة الحدودية
-    [33.245, 35.665], // شبعا
-    [33.300, 35.685], // مزارع شبعا
-    [33.430, 35.660], // حاصبيا
-    [33.470, 35.560], // راشيا / الجهة الشرقية
-    [33.470, 35.400], // شمال مرجعيون
-    [33.440, 35.260], // شمال النبطية باتجاه صيدا
-    [33.330, 35.190], // جنوب صيدا
-    [33.200, 35.140], // صور
-    [33.095, 35.104]  // إغلاق المضلع عند الناقورة
-];
-
-L.polygon(southZoneCoords, {
-    color: '#f5c518',
-    weight: 3,
-    fillColor: '#f5e28a',
-    fillOpacity: 0.35
-}).addTo(map);
-
 // custom zoom buttons
 document.getElementById('zoomIn').addEventListener('click', () => map.zoomIn());
 document.getElementById('zoomOut').addEventListener('click', () => map.zoomOut());
