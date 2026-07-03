@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin-Only Add Button Demo</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    :root{
+        --red:#e3101f; --red2:#ff2d3d; --red-dark:#7a0a12;
+        --black:#050505; --black2:#0e0e0e; --black3:#161616; --gray:#8f8f8f;
+    }
+    body{
+        font-family:'Segoe UI', Tahoma, Arial, sans-serif;
+        background:#050505; color:#f5f5f5; min-height:100vh;
+        padding:2rem 1rem;
+    }
+    h1{ font-size:1.3rem; margin-bottom:1rem; }
+
+    /* ---- Alerts map ---- */
+    #map-wrap{
+        position:relative; max-width:820px; margin:0 auto 1.4rem;
+        border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,0.08);
+    }
+    #alert-map{ height:340px; width:100%; background:#0a0e14; }
+    .map-legend{
+        position:absolute; bottom:10px; right:10px;
+        background:rgba(14,14,14,0.9); border:1px solid rgba(255,255,255,0.1);
+        border-radius:10px; padding:8px 12px; font-size:11px; z-index:500; line-height:1.8;
+    }
+    .map-legend .row{ display:flex; align-items:center; gap:7px; }
+    .map-legend .line-sample{ width:24px; height:0; border-top:2px dashed #f4c430; }
+    .map-legend .circle-sample{
+        width:12px; height:12px; border-radius:50%;
+        border:2px solid var(--red2); background:rgba(227,16,31,0.15);
+    }
+    .plane-icon{ filter: drop-shadow(0 0 4px rgba(227,16,31,0.9)); }
+    .pick-mode #alert-map{ cursor:crosshair; }
+
+    #entries-list{ max-width:520px; margin:0 auto; }
+    .incident-item{
+        padding:.9rem 1.1rem; border:1px solid rgba(255,255,255,0.08);
+        border-radius:12px; margin-bottom:.7rem; display:flex;
+        align-items:flex-start; justify-content:space-between; gap:.7rem;
+        background:var(--black2);
+    }
+    .incident-place{ font-weight:800; font-size:.95rem; margin-bottom:.2rem; }
+    .incident-desc{ color:#bbb; font-size:.82rem; }
+    .tool-btn{
+        width:34px; height:34px; border-radius:9px; border:1px solid rgba(255,255,255,0.12);
+        background:rgba(255,255,255,0.05); color:#eee; cursor:pointer; font-size:.9rem;
+    }
+    .tool-btn:hover{ border-color:var(--red2); color:var(--red2); }
+
+    /* Floating Add button */
+    #add-btn{
+        display:none; /* JS reveals this only for the admin */
+        position:fixed; bottom:24px; right:24px; z-index:500;
+        width:56px; height:56px; border-radius:50%;
+        background:linear-gradient(135deg,var(--red2),var(--red-dark));
+        border:none; color:#fff; font-size:1.6rem; cursor:pointer;
+        box-shadow:0 8px 24px rgba(227,16,31,0.4);
+        align-items:center; justify-content:center;
+    }
+
+    /* Modal */
+    .modal-overlay{
+        position:fixed; inset:0; z-index:800; background:rgba(0,0,0,0.6);
+        display:flex; align-items:center; justify-content:center; padding:1rem;
+        opacity:0; pointer-events:none; transition:.2s;
+    }
+    .modal-overlay.show{ opacity:1; pointer-events:auto; }
+    .modal-box{
+        background:var(--black2); border:1px solid rgba(227,16,31,0.35); border-radius:16px;
+        width:100%; max-width:380px; padding:1.3rem;
+    }
+    .modal-box h3{ font-size:1.05rem; font-weight:900; margin-bottom:1rem; color:#fff; }
+    .form-group{ margin-bottom:.9rem; }
+    .form-group label{ display:block; font-size:.8rem; font-weight:700; color:#ddd; margin-bottom:.35rem; }
+    .form-group input, .form-group textarea{
+        width:100%; background:var(--black3); border:1px solid rgba(255,255,255,0.12); border-radius:9px;
+        padding:.6rem .7rem; font-size:.85rem; color:#f2f2f2; font-family:inherit;
+    }
+    .form-group textarea{ resize:vertical; min-height:70px; }
+    .modal-actions{ display:flex; gap:.6rem; }
+    .modal-btn{ flex:1; padding:.7rem; border-radius:10px; font-weight:800; font-size:.85rem; cursor:pointer; border:none; }
+    .modal-btn.primary{ background:linear-gradient(135deg,var(--red2),var(--red-dark)); color:#fff; }
+    .modal-btn.secondary{ background:rgba(255,255,255,0.08); color:#ddd; }
+</style>
+</head>
+<body>
+
+<h1>Entries</h1>
+
+<div id="map-wrap">
+  <div id="alert-map"></div>
+  <div class="map-legend">
+    <div class="row"><span class="line-sample"></span> الحد السياسي</div>
+    <div class="row"><span class="circle-sample"></span> نطاق التأثير</div>
+    <div class="row">✈️ تنبيه غارة جوية</div>
+  </div>
+</div>
+
+<div id="entries-list"></div>
+
+<!-- Only visible to the admin UID, toggled by app.js -->
+<button id="add-btn" title="Add entry">➕</button>
+
+<!-- Add / Edit modal -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal-box">
+        <h3 id="modal-title">New Entry</h3>
+        <form id="entry-form">
+            <div class="form-group">
+                <label for="entry-title">Title</label>
+                <input type="text" id="entry-title" required>
+            </div>
+            <div class="form-group">
+                <label for="entry-desc">Description</label>
+                <textarea id="entry-desc"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Location (optional — shows on map)</label>
+                <div style="display:flex; gap:.5rem;">
+                    <input type="number" step="any" id="entry-lat" placeholder="Lat">
+                    <input type="number" step="any" id="entry-lng" placeholder="Lng">
+                </div>
+                <button type="button" class="modal-btn secondary" id="pick-on-map-btn" style="margin-top:.5rem;">📍 Pick on map</button>
+            </div>
+            <div class="form-group">
+                <label for="entry-radius">Affected radius (km)</label>
+                <input type="number" step="any" min="1" id="entry-radius" placeholder="15">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-btn secondary" id="modal-cancel">Cancel</button>
+                <button type="submit" class="modal-btn primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Firebase v9+ modular SDK, loaded as ES modules — no build step needed -->
+<script type="module" src="firebase-config.js"></script>
+<script type="module" src="admin-auth.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
