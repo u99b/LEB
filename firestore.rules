@@ -36,12 +36,7 @@ service cloud.firestore {
     }
 
     // ------------------------------------------------------------
-    // entries/{entryId}  -> your app's actual content
-    //
-    // - Readable by everyone (public view-only data).
-    // - Writable only by a UID listed in admin/config.uids.
-    //   This is checked server-side on every single write, so it
-    //   cannot be bypassed by tampering with client-side JS.
+    // Helper: is the caller one of the stored admin UIDs?
     // ------------------------------------------------------------
     function isAdmin() {
       return request.auth != null
@@ -49,6 +44,20 @@ service cloud.firestore {
              && request.auth.uid in get(/databases/$(database)/documents/admin/config).data.uids;
     }
 
+    // ------------------------------------------------------------
+    // incidents/{incidentId}  -> أحداث الخريطة
+    //
+    // - Readable by everyone (public view-only data).
+    // - Writable only by a UID listed in admin/config.uids.
+    // ------------------------------------------------------------
+    match /incidents/{incidentId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ------------------------------------------------------------
+    // entries/{entryId}  -> (kept for backward compatibility)
+    // ------------------------------------------------------------
     match /entries/{entryId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();

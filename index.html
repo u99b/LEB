@@ -1,70 +1,181 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin-Only Add Button Demo</title>
+<title>الخريطة المباشرة | LebBreakingNews</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <style>
     * { margin:0; padding:0; box-sizing:border-box; }
+
     :root{
-        --red:#e3101f; --red2:#ff2d3d; --red-dark:#7a0a12;
-        --black:#050505; --black2:#0e0e0e; --black3:#161616; --gray:#8f8f8f;
+        --red:#e3101f;
+        --red2:#ff2d3d;
+        --red-dark:#7a0a12;
+        --black:#050505;
+        --black2:#0e0e0e;
+        --black3:#161616;
+        --gray:#8f8f8f;
+        --green:#22c55e;
     }
-    body{
-        font-family:'Segoe UI', Tahoma, Arial, sans-serif;
-        background:#050505; color:#f5f5f5; min-height:100vh;
-        padding:2rem 1rem;
-    }
-    h1{ font-size:1.3rem; margin-bottom:1rem; }
 
-    /* ---- Alerts map ---- */
-    #map-wrap{
-        position:relative; max-width:820px; margin:0 auto 1.4rem;
-        border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,0.08);
-    }
-    #alert-map{ height:340px; width:100%; background:#0a0e14; }
-    .map-legend{
-        position:absolute; bottom:10px; right:10px;
-        background:rgba(14,14,14,0.9); border:1px solid rgba(255,255,255,0.1);
-        border-radius:10px; padding:8px 12px; font-size:11px; z-index:500; line-height:1.8;
-    }
-    .map-legend .row{ display:flex; align-items:center; gap:7px; }
-    .map-legend .line-sample{ width:24px; height:0; border-top:2px dashed #f4c430; }
-    .map-legend .circle-sample{
-        width:12px; height:12px; border-radius:50%;
-        border:2px solid var(--red2); background:rgba(227,16,31,0.15);
-    }
-    .plane-icon{ filter: drop-shadow(0 0 4px rgba(227,16,31,0.9)); }
-    .pick-mode #alert-map{ cursor:crosshair; }
+    html, body{ height:100%; }
+    body{ font-family:'Segoe UI', Tahoma, Arial, sans-serif; background:#050505; color:#f5f5f5; overflow:hidden; }
 
-    #entries-list{ max-width:520px; margin:0 auto; }
-    .incident-item{
-        padding:.9rem 1.1rem; border:1px solid rgba(255,255,255,0.08);
-        border-radius:12px; margin-bottom:.7rem; display:flex;
-        align-items:flex-start; justify-content:space-between; gap:.7rem;
-        background:var(--black2);
-    }
-    .incident-place{ font-weight:800; font-size:.95rem; margin-bottom:.2rem; }
-    .incident-desc{ color:#bbb; font-size:.82rem; }
-    .tool-btn{
-        width:34px; height:34px; border-radius:9px; border:1px solid rgba(255,255,255,0.12);
-        background:rgba(255,255,255,0.05); color:#eee; cursor:pointer; font-size:.9rem;
-    }
-    .tool-btn:hover{ border-color:var(--red2); color:var(--red2); }
+    /* ===== fullscreen map ===== */
+    #south-map{ position:fixed; inset:0; z-index:1; }
 
-    /* Floating Add button */
-    #add-btn{
-        display:none; /* JS reveals this only for the admin */
-        position:fixed; bottom:24px; right:24px; z-index:500;
-        width:56px; height:56px; border-radius:50%;
+    /* ===== top bar (floating) ===== */
+    .top-bar{
+        position:fixed; top:0; left:0; right:0; z-index:500;
+        display:flex; align-items:center; justify-content:space-between;
+        padding:.7rem 1rem;
+        background:linear-gradient(to bottom, rgba(5,5,5,0.9), rgba(5,5,5,0));
+        pointer-events:none;
+    }
+    .top-bar > *{ pointer-events:auto; }
+
+    .brand{ display:flex; align-items:center; gap:.6rem; text-decoration:none;
+        background:rgba(10,10,10,0.85); backdrop-filter:blur(10px);
+        border:1px solid rgba(227,16,31,0.3); border-radius:12px; padding:.45rem .9rem .45rem .5rem;
+    }
+    .brand img{ width:30px; height:30px; border-radius:7px; }
+    .brand-name{ font-size:.95rem; font-weight:900; color:#fff; white-space:nowrap; }
+    .brand-name .accent{ color:var(--red2); }
+
+    .top-right{ display:flex; align-items:center; gap:.6rem; }
+
+    .pill-btn{
+        display:flex; align-items:center; gap:.45rem;
+        background:rgba(10,10,10,0.85); backdrop-filter:blur(10px);
+        border:1px solid rgba(255,255,255,0.12); border-radius:12px;
+        padding:.55rem .95rem; font-size:.82rem; font-weight:700; color:#eee;
+        text-decoration:none; cursor:pointer; white-space:nowrap;
+        transition:.2s;
+    }
+    .pill-btn:hover{ border-color:rgba(227,16,31,0.5); }
+
+    .live-badge{
+        border-color:rgba(34,197,94,0.4);
+    }
+    .live-dot-green{
+        width:8px; height:8px; border-radius:50%; background:var(--green);
+        box-shadow:0 0 8px var(--green);
+        animation:pulse 1.3s infinite;
+    }
+    @keyframes pulse{ 0%,100%{ transform:scale(1); opacity:1;} 50%{ transform:scale(1.8); opacity:.35;} }
+
+    .report-btn{
         background:linear-gradient(135deg,var(--red2),var(--red-dark));
-        border:none; color:#fff; font-size:1.6rem; cursor:pointer;
-        box-shadow:0 8px 24px rgba(227,16,31,0.4);
-        align-items:center; justify-content:center;
+        border-color:transparent; color:#fff;
     }
 
-    /* Modal */
+    /* ===== left floating tool stack ===== */
+    .tool-stack{
+        position:fixed; top:80px; left:14px; z-index:500;
+        display:flex; flex-direction:column; gap:.6rem;
+    }
+    .tool-btn{
+        width:44px; height:44px; border-radius:11px;
+        background:rgba(10,10,10,0.85); backdrop-filter:blur(10px);
+        border:1px solid rgba(255,255,255,0.12);
+        display:flex; align-items:center; justify-content:center;
+        font-size:1.1rem; color:#eee; cursor:pointer; transition:.2s;
+    }
+    .tool-btn:hover{ border-color:rgba(227,16,31,0.5); color:var(--red2); }
+    .tool-btn.active{ background:linear-gradient(135deg,var(--red2),var(--red-dark)); border-color:transparent; color:#fff; }
+
+    /* ===== bottom bar ===== */
+    .bottom-bar{
+        position:fixed; bottom:0; left:0; right:0; z-index:500;
+        display:flex; align-items:center; justify-content:space-between; gap:.8rem;
+        padding:.9rem 1rem; flex-wrap:wrap;
+        background:linear-gradient(to top, rgba(5,5,5,0.92), rgba(5,5,5,0));
+        pointer-events:none;
+    }
+    .bottom-bar > *{ pointer-events:auto; }
+
+    .filter-btn{
+        display:flex; align-items:center; gap:.5rem;
+        background:rgba(10,10,10,0.9); backdrop-filter:blur(10px);
+        border:1px solid rgba(255,255,255,0.12); border-radius:12px;
+        padding:.75rem 1.2rem; font-weight:700; font-size:.86rem; color:#eee;
+        cursor:pointer; transition:.2s;
+    }
+    .filter-btn:hover{ border-color:rgba(227,16,31,0.5); }
+
+    .alerts-btn{
+        display:flex; align-items:center; gap:.7rem;
+        background:rgba(10,10,10,0.9); backdrop-filter:blur(10px);
+        border:1px solid rgba(255,255,255,0.12); border-radius:12px;
+        padding:.7rem 1.2rem; cursor:pointer; transition:.2s; flex:1; max-width:340px;
+    }
+    .alerts-btn:hover{ border-color:rgba(227,16,31,0.5); }
+    .alerts-count{
+        background:var(--red2); color:#fff; font-weight:900; font-size:.8rem;
+        width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+        flex-shrink:0;
+    }
+    .alerts-label{ font-weight:700; font-size:.86rem; color:#eee; }
+    .alerts-bar-accent{ width:3px; height:20px; background:var(--red2); border-radius:2px; margin-inline-start:auto; }
+
+    /* ===== legend panel (toggle) ===== */
+    .legend-panel{
+        position:fixed; top:80px; left:70px; z-index:500;
+        background:rgba(10,10,10,0.94); backdrop-filter:blur(12px);
+        border:1px solid rgba(227,16,31,0.3); border-radius:14px;
+        padding:1rem 1.1rem; width:220px;
+        transform:translateX(-20px); opacity:0; pointer-events:none;
+        transition:.25s;
+    }
+    .legend-panel.show{ transform:translateX(0); opacity:1; pointer-events:auto; }
+    .legend-panel h4{ font-size:.85rem; font-weight:900; margin-bottom:.7rem; color:#fff; }
+    .legend-item{ display:flex; align-items:center; gap:.55rem; font-size:.8rem; color:#ddd; margin-bottom:.55rem; }
+    .legend-item:last-child{ margin-bottom:0; }
+    .legend-dot{ width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; flex-shrink:0; border:2px solid #fff; }
+
+    /* ===== incidents drawer (bottom sheet) ===== */
+    .drawer-overlay{
+        position:fixed; inset:0; z-index:600; background:rgba(0,0,0,0.5);
+        opacity:0; pointer-events:none; transition:.25s;
+    }
+    .drawer-overlay.show{ opacity:1; pointer-events:auto; }
+    .drawer{
+        position:fixed; bottom:0; left:0; right:0; z-index:601;
+        background:var(--black2); border-top:1px solid rgba(227,16,31,0.35);
+        border-radius:20px 20px 0 0;
+        max-height:65vh; display:flex; flex-direction:column;
+        transform:translateY(100%); transition:.3s ease;
+        box-shadow:0 -20px 50px rgba(0,0,0,0.6);
+    }
+    .drawer.show{ transform:translateY(0); }
+    .drawer-handle{ width:40px; height:4px; background:rgba(255,255,255,0.2); border-radius:3px; margin:.8rem auto .4rem; }
+    .drawer-header{ display:flex; align-items:center; justify-content:space-between; padding:.6rem 1.3rem 1rem; border-bottom:1px solid rgba(255,255,255,0.08); }
+    .drawer-header h3{ font-size:1.05rem; font-weight:900; }
+    .drawer-close{ background:none; border:none; color:var(--gray); font-size:1.3rem; cursor:pointer; }
+    .drawer-body{ overflow-y:auto; padding:.4rem 0; }
+
+    .incident-item{ padding:.9rem 1.3rem; border-bottom:1px solid rgba(255,255,255,0.05); cursor:pointer; transition:.2s; display:flex; align-items:flex-start; gap:.7rem; }
+    .incident-item:hover{ background:rgba(227,16,31,0.08); }
+    .incident-item:last-child{ border-bottom:none; }
+    .incident-badge{ width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0; border:2px solid #fff; margin-top:.1rem; }
+    .incident-text{ flex:1; }
+    .incident-place{ font-weight:800; font-size:.92rem; margin-bottom:.15rem; }
+    .incident-desc{ color:#bbb; font-size:.8rem; margin-bottom:.2rem; }
+    .incident-time{ color:var(--gray); font-size:.72rem; }
+
+    /* ===== add-incident mode ===== */
+    #south-map.add-mode{ cursor:crosshair; }
+    .add-mode-banner{
+        position:fixed; top:70px; left:50%; transform:translateX(-50%) translateY(-10px);
+        z-index:700; background:linear-gradient(135deg,var(--red2),var(--red-dark));
+        color:#fff; font-weight:800; font-size:.85rem; padding:.6rem 1.1rem; border-radius:12px;
+        box-shadow:0 8px 20px rgba(227,16,31,0.35);
+        opacity:0; pointer-events:none; transition:.25s;
+    }
+    .add-mode-banner.show{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+
+    /* ===== add-incident modal ===== */
     .modal-overlay{
         position:fixed; inset:0; z-index:800; background:rgba(0,0,0,0.6);
         display:flex; align-items:center; justify-content:center; padding:1rem;
@@ -73,77 +184,467 @@
     .modal-overlay.show{ opacity:1; pointer-events:auto; }
     .modal-box{
         background:var(--black2); border:1px solid rgba(227,16,31,0.35); border-radius:16px;
-        width:100%; max-width:380px; padding:1.3rem;
+        width:100%; max-width:380px; padding:1.3rem; max-height:85vh; overflow-y:auto;
+        transform:scale(.95); transition:.2s;
     }
-    .modal-box h3{ font-size:1.05rem; font-weight:900; margin-bottom:1rem; color:#fff; }
+    .modal-overlay.show .modal-box{ transform:scale(1); }
+    .modal-box h3{ font-size:1.05rem; font-weight:900; margin-bottom:.2rem; color:#fff; }
+    .modal-sub{ font-size:.78rem; color:var(--gray); margin-bottom:1rem; }
     .form-group{ margin-bottom:.9rem; }
     .form-group label{ display:block; font-size:.8rem; font-weight:700; color:#ddd; margin-bottom:.35rem; }
-    .form-group input, .form-group textarea{
+    .form-group select, .form-group input, .form-group textarea{
         width:100%; background:var(--black3); border:1px solid rgba(255,255,255,0.12); border-radius:9px;
         padding:.6rem .7rem; font-size:.85rem; color:#f2f2f2; font-family:inherit;
     }
-    .form-group textarea{ resize:vertical; min-height:70px; }
+    .form-group textarea{ resize:vertical; min-height:60px; }
+    .form-group select:focus, .form-group input:focus, .form-group textarea:focus{ outline:none; border-color:var(--red2); }
+    .coords-line{ font-size:.72rem; color:var(--gray); margin-bottom:1rem; }
     .modal-actions{ display:flex; gap:.6rem; }
-    .modal-btn{ flex:1; padding:.7rem; border-radius:10px; font-weight:800; font-size:.85rem; cursor:pointer; border:none; }
+    .modal-btn{ flex:1; padding:.7rem; border-radius:10px; font-weight:800; font-size:.85rem; cursor:pointer; border:none; text-align:center; }
     .modal-btn.primary{ background:linear-gradient(135deg,var(--red2),var(--red-dark)); color:#fff; }
     .modal-btn.secondary{ background:rgba(255,255,255,0.08); color:#ddd; }
+
+    /* ===== leaflet overrides ===== */
+    .leaflet-control-zoom{ display:none; } /* we use custom zoom */
+    .leaflet-popup-content-wrapper{ background:#161616; color:#f2f2f2; border:1px solid rgba(227,16,31,0.4); border-radius:10px; }
+    .leaflet-popup-tip{ background:#161616; }
+    .pop-title{ font-weight:900; color:var(--red2); margin-bottom:.3rem; font-size:.9rem; }
+    .pop-place{ font-weight:700; margin-bottom:.2rem; font-size:.85rem; }
+    .pop-time{ color:var(--gray); font-size:.75rem; }
+
+    .pulse-wrap2{ position:relative; width:36px; height:36px; }
+    .pulse-ring2{
+        position:absolute; inset:0; border-radius:50%;
+        animation:pulseRing 2s ease-out infinite; opacity:.4;
+    }
+    .marker-core{
+        position:absolute; inset:4px; border-radius:50%; border:2px solid #fff;
+        display:flex; align-items:center; justify-content:center;
+    }
+    .marker-core svg{ width:14px; height:14px; }
+    @keyframes pulseRing{ 0%{ transform:scale(1); opacity:.4;} 100%{ transform:scale(2.5); opacity:0;} }
+
+    /* ===== custom zoom stack ===== */
+    .zoom-stack{
+        position:fixed; bottom:80px; left:14px; z-index:500;
+        background:rgba(10,10,10,0.85); backdrop-filter:blur(10px);
+        border:1px solid rgba(255,255,255,0.12); border-radius:11px; overflow:hidden;
+    }
+    .zoom-btn{
+        width:44px; height:40px; display:flex; align-items:center; justify-content:center;
+        font-size:1.2rem; font-weight:700; color:#eee; cursor:pointer; transition:.2s;
+    }
+    .zoom-btn:hover{ color:var(--red2); background:rgba(227,16,31,0.1); }
+    .zoom-divider{ height:1px; background:rgba(255,255,255,0.1); }
+
+    /* ===== admin delete btn in drawer ===== */
+    .del-inc-btn{
+        background:none; border:1px solid rgba(255,255,255,0.1); border-radius:8px;
+        color:var(--gray); font-size:.8rem; cursor:pointer; padding:.25rem .5rem;
+        margin-top:.25rem; transition:.2s; flex-shrink:0; align-self:flex-start;
+    }
+    .del-inc-btn:hover{ border-color:var(--red2); color:var(--red2); }
 </style>
 </head>
 <body>
 
-<h1>Entries</h1>
+<!-- FULLSCREEN MAP -->
+<div id="south-map"></div>
 
-<div id="map-wrap">
-  <div id="alert-map"></div>
-  <div class="map-legend">
-    <div class="row"><span class="line-sample"></span> الحد السياسي</div>
-    <div class="row"><span class="circle-sample"></span> نطاق التأثير</div>
-    <div class="row">✈️ تنبيه غارة جوية</div>
-  </div>
+<!-- TOP BAR -->
+<div class="top-bar">
+    <a href="#" class="brand">
+        <div class="brand-name">Leb<span class="accent">Breaking</span>News</div>
+    </a>
+    <div class="top-right">
+        <a href="https://t.me/LebBreakingNews" target="_blank" class="pill-btn report-btn">⚠️ <span class="label-text">بلّغ عن حدث</span></a>
+        <div class="pill-btn live-badge"><span class="live-dot-green"></span> <span class="label-text">مباشر</span></div>
+    </div>
 </div>
 
-<div id="entries-list"></div>
+<!-- LEFT TOOL STACK -->
+<div class="tool-stack">
+    <div class="tool-btn" id="legendToggle" title="دليل الرموز">⚙️</div>
+    <!-- زر الإضافة مخفي بالكامل للزوار العاديين — يظهر فقط للأدمين بعد التحقق -->
+    <div class="tool-btn" id="addIncidentToggle" title="إضافة اعتداء يدويًا" style="display:none">➕</div>
+    <a href="index.html" class="tool-btn" title="الرئيسية" style="text-decoration:none;">🏠</a>
+</div>
 
-<!-- Only visible to the admin UID, toggled by app.js -->
-<button id="add-btn" title="Add entry">➕</button>
+<!-- ADD MODE BANNER -->
+<div class="add-mode-banner" id="addModeBanner">📍 دوس على المكان على الخريطة لتحدد موقع الاعتداء</div>
 
-<!-- Add / Edit modal -->
-<div class="modal-overlay" id="modal-overlay">
+<!-- ADD INCIDENT MODAL -->
+<div class="modal-overlay" id="addModal">
     <div class="modal-box">
-        <h3 id="modal-title">New Entry</h3>
-        <form id="entry-form">
+        <h3>إضافة اعتداء جديد</h3>
+        <div class="modal-sub">عبّي البيانات وانشر النقطة على الخريطة</div>
+        <div class="coords-line" id="coordsLine"></div>
+        <form id="addForm">
             <div class="form-group">
-                <label for="entry-title">Title</label>
-                <input type="text" id="entry-title" required>
+                <label>نوع الحدث</label>
+                <select id="incType" required></select>
             </div>
             <div class="form-group">
-                <label for="entry-desc">Description</label>
-                <textarea id="entry-desc"></textarea>
+                <label>اسم المكان</label>
+                <input type="text" id="incPlace" placeholder="مثال: بنت جبيل" required>
             </div>
             <div class="form-group">
-                <label>Location (optional — shows on map)</label>
-                <div style="display:flex; gap:.5rem;">
-                    <input type="number" step="any" id="entry-lat" placeholder="Lat">
-                    <input type="number" step="any" id="entry-lng" placeholder="Lng">
-                </div>
-                <button type="button" class="modal-btn secondary" id="pick-on-map-btn" style="margin-top:.5rem;">📍 Pick on map</button>
+                <label>الوقت</label>
+                <input type="text" id="incTime" placeholder="مثال: اليوم 14:20">
             </div>
             <div class="form-group">
-                <label for="entry-radius">Affected radius (km)</label>
-                <input type="number" step="any" min="1" id="entry-radius" placeholder="15">
+                <label>الوصف</label>
+                <textarea id="incDesc" placeholder="تفاصيل مختصرة عن الحدث..."></textarea>
             </div>
             <div class="modal-actions">
-                <button type="button" class="modal-btn secondary" id="modal-cancel">Cancel</button>
-                <button type="submit" class="modal-btn primary">Save</button>
+                <button type="button" class="modal-btn secondary" id="addCancelBtn">إلغاء</button>
+                <button type="submit" class="modal-btn primary">نشر على الخريطة</button>
             </div>
         </form>
     </div>
 </div>
 
+<!-- LEGEND PANEL -->
+<div class="legend-panel" id="legendPanel">
+    <h4>دليل الرموز</h4>
+    <div id="legendList"></div>
+</div>
+
+<!-- BOTTOM BAR -->
+<div class="bottom-bar">
+    <div class="filter-btn" id="filterBtn">☰ تصفية</div>
+    <div class="alerts-btn" id="alertsBtn">
+        <span class="alerts-count" id="alertsCount">0</span>
+        <span class="alerts-label">آخر التنبيهات</span>
+        <span class="alerts-bar-accent"></span>
+    </div>
+</div>
+
+<!-- ZOOM STACK -->
+<div class="zoom-stack">
+    <div class="zoom-btn" id="zoomIn">+</div>
+    <div class="zoom-divider"></div>
+    <div class="zoom-btn" id="zoomOut">−</div>
+</div>
+
+<!-- INCIDENTS DRAWER -->
+<div class="drawer-overlay" id="drawerOverlay"></div>
+<div class="drawer" id="drawer">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header">
+        <h3>آخر التنبيهات</h3>
+        <button class="drawer-close" id="drawerClose">✕</button>
+    </div>
+    <div class="drawer-body" id="incidentList"></div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<!-- Firebase v9+ modular SDK, loaded as ES modules — no build step needed -->
-<script type="module" src="firebase-config.js"></script>
-<script type="module" src="admin-auth.js"></script>
-<script type="module" src="app.js"></script>
+
+<!-- ================================================================
+     Firebase v9+ modular SDK (ES modules — no build step needed)
+     ================================================================ -->
+<script type="module">
+import { db } from "./firebase-config.js";
+import { initAdminAuth } from "./admin-auth.js";
+import {
+    collection,
+    addDoc,
+    deleteDoc,
+    doc,
+    onSnapshot,
+    serverTimestamp,
+    orderBy,
+    query
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ===== categories (clean SVG icons instead of emoji) =====
+const svgIcons = {
+    target: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="white"/></svg>',
+    burst: '<svg viewBox="0 0 24 24" fill="white"><path d="M12 2l1.9 6.6L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.4z"/></svg>',
+    plane: '<svg viewBox="0 0 24 24" fill="white"><path d="M21 15.8v-1.9l-7.5-4.9V4.3a1.5 1.5 0 0 0-3 0V9l-7.5 4.9v1.9l7.5-2.4v4.7l-2.2 1.6v1.4l3.7-1.1 3.7 1.1v-1.4l-2.2-1.6v-4.7z"/></svg>',
+    drone: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/><circle cx="5" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/><path d="M6.3 6.3l3.5 3.5M17.7 6.3l-3.5 3.5M6.3 17.7l3.5-3.5M17.7 17.7l-3.5-3.5"/><rect x="9.5" y="9.5" width="5" height="5" rx="1" fill="white" stroke="none"/></svg>',
+    droneTarget: '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="1.6"/><circle cx="19" cy="5" r="1.6"/><path d="M6.3 6.3l2.6 2.6M17.7 6.3l-2.6 2.6"/><rect x="9.3" y="9.3" width="5.4" height="5.4" rx="1" fill="white" stroke="none"/><circle cx="12" cy="19" r="2.6"/><path d="M12 15.5v1.2M12 20.3v1.2M8.5 19h1.2M14.3 19h1.2"/></svg>'
+};
+
+const categories = {
+    artillery:  { label: "قصف مدفعي",  color: "#f97316", icon: svgIcons.target },
+    explosion:  { label: "تفجير",      color: "#dc2626", icon: svgIcons.burst },
+    airstrike:  { label: "غارة جوية",   color: "#7f1d1d", icon: svgIcons.plane },
+    jetflyover: { label: "تحليق حربي",  color: "#3b82f6", icon: svgIcons.plane },
+    dronefly:   { label: "تحليق مسيرة", color: "#8b5cf6", icon: svgIcons.drone },
+    dronestrike:{ label: "غارة مسيرة",  color: "#ec4899", icon: svgIcons.droneTarget }
+};
+
+// populate the "نوع الحدث" select in the add-incident form
+const incTypeSelect = document.getElementById('incType');
+Object.entries(categories).forEach(([key, cat]) => {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = cat.label;
+    incTypeSelect.appendChild(opt);
+});
+
+// ===== demo incidents — عدّل هالمصفوفة لتحديث الخريطة =====
+const incidents = [
+    { lat: 33.1194, lng: 35.1069, place: "الناقورة",     type: "airstrike",  time: "اليوم 09:40", desc: "غارة جوية استهدفت محيط المنطقة" },
+    { lat: 33.0942, lng: 35.1394, place: "مروحين",       type: "artillery",  time: "اليوم 10:05", desc: "قصف مدفعي على أطراف البلدة" },
+    { lat: 33.1064, lng: 35.3717, place: "عيتا الشعب",   type: "explosion",  time: "أمس 22:15",   desc: "دوي انفجار سمع في محيط البلدة" },
+    { lat: 33.1024, lng: 35.5719, place: "كفركلا",       type: "dronestrike",time: "أمس 18:30",   desc: "غارة مسيّرة استهدفت آلية" },
+    { lat: 33.1994, lng: 35.5769, place: "الخيام",       type: "jetflyover", time: "اليوم 07:50", desc: "تحليق مكثف للطيران الحربي" },
+    { lat: 33.3608, lng: 35.5911, place: "مرجعيون",      type: "dronefly",   time: "اليوم 06:20", desc: "تحليق مسيّرات استطلاع" },
+    { lat: 33.1214, lng: 35.4306, place: "بنت جبيل",     type: "artillery",  time: "أمس 20:00",   desc: "سقوط عدة قذائف مدفعية" },
+    { lat: 33.2704, lng: 35.2038, place: "صور",          type: "jetflyover", time: "اليوم 08:15", desc: "تحليق حربي على علو منخفض" },
+    { lat: 33.3789, lng: 35.4839, place: "النبطية",      type: "dronefly",   time: "اليوم 11:00", desc: "تحليق مسيّرة استطلاع فوق المنطقة" }
+];
+
+// ===== map init: LIGHT clear style with visible town names =====
+const map = L.map('south-map', {
+    zoomControl: false,
+    attributionControl: false
+}).setView([33.20, 35.35], 10);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    subdomains: ['a','b','c']
+}).addTo(map);
+
+// custom zoom buttons
+document.getElementById('zoomIn').addEventListener('click', () => map.zoomIn());
+document.getElementById('zoomOut').addEventListener('click', () => map.zoomOut());
+
+const markerRefs = {};
+const listEl = document.getElementById('incidentList');
+const alertsCountEl = document.getElementById('alertsCount');
+
+// ===== admin state (populated after Firebase auth resolves) =====
+let isAdmin = false;
+
+function addMarkerForIncident(inc, idx) {
+    const cat = categories[inc.type] || categories['explosion'];
+    const icon = L.divIcon({
+        className: '',
+        html: `
+            <div class="pulse-wrap2">
+                <div class="pulse-ring2" style="background:${cat.color}"></div>
+                <div class="marker-core" style="background:${cat.color}">${cat.icon}</div>
+            </div>
+        `,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+        popupAnchor: [0, -18]
+    });
+    const marker = L.marker([inc.lat, inc.lng], { icon }).addTo(map);
+    marker.bindPopup(`
+        <div class="pop-title">${cat.icon} ${cat.label}</div>
+        <div class="pop-place">${inc.place}</div>
+        <div>${inc.desc}</div>
+        <div class="pop-time">${inc.time}</div>
+    `);
+    markerRefs[idx] = marker;
+}
+
+function addListItemForIncident(inc, idx, firestoreId) {
+    const cat = categories[inc.type] || categories['explosion'];
+    const item = document.createElement('div');
+    item.className = 'incident-item';
+    item.dataset.idx = idx;
+    if (firestoreId) item.dataset.firestoreId = firestoreId;
+
+    const badge = document.createElement('span');
+    badge.className = 'incident-badge';
+    badge.style.background = cat.color;
+    badge.innerHTML = cat.icon;
+
+    const text = document.createElement('div');
+    text.className = 'incident-text';
+    text.innerHTML = `
+        <div class="incident-place">${inc.place} — ${cat.label}</div>
+        <div class="incident-desc">${inc.desc}</div>
+        <div class="incident-time">${inc.time}</div>
+    `;
+
+    item.appendChild(badge);
+    item.appendChild(text);
+
+    // زر الحذف — يظهر للأدمين فقط وفقط للأحداث المحفوظة على Firestore
+    if (isAdmin && firestoreId) {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'del-inc-btn';
+        delBtn.textContent = '🗑';
+        delBtn.title = 'حذف';
+        delBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (confirm('تحذف هاد الحدث من الخريطة؟')) {
+                try {
+                    await deleteDoc(doc(db, 'incidents', firestoreId));
+                } catch (err) {
+                    alert('حدث خطأ عند الحذف: ' + err.message);
+                }
+            }
+        });
+        item.appendChild(delBtn);
+    }
+
+    item.addEventListener('click', (e) => {
+        if (e.target.classList.contains('del-inc-btn')) return;
+        closeDrawer();
+        map.setView([inc.lat, inc.lng], 13);
+        if (markerRefs[idx]) markerRefs[idx].openPopup();
+    });
+    listEl.appendChild(item);
+}
+
+// ===== render static demo incidents =====
+incidents.forEach((inc, idx) => {
+    addMarkerForIncident(inc, idx);
+    addListItemForIncident(inc, idx, null);
+});
+alertsCountEl.textContent = incidents.length;
+
+// legend list
+const legendEl = document.getElementById('legendList');
+Object.values(categories).forEach(cat => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<span class="legend-dot" style="background:${cat.color}">${cat.icon}</span>${cat.label}`;
+    legendEl.appendChild(item);
+});
+
+// legend toggle
+const legendPanel = document.getElementById('legendPanel');
+document.getElementById('legendToggle').addEventListener('click', (e) => {
+    legendPanel.classList.toggle('show');
+    e.currentTarget.classList.toggle('active');
+});
+
+// incidents drawer
+const drawer = document.getElementById('drawer');
+const drawerOverlay = document.getElementById('drawerOverlay');
+function openDrawer(){ drawer.classList.add('show'); drawerOverlay.classList.add('show'); }
+function closeDrawer(){ drawer.classList.remove('show'); drawerOverlay.classList.remove('show'); }
+document.getElementById('alertsBtn').addEventListener('click', openDrawer);
+document.getElementById('filterBtn').addEventListener('click', openDrawer);
+document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+drawerOverlay.addEventListener('click', closeDrawer);
+
+// ===================================================================
+// ===== Firebase Admin Auth + Firestore real-time incidents =====
+// ===================================================================
+const incidentsCol = collection(db, 'incidents');
+
+// Live Firestore incidents (مخزنة من قِبَل الأدمين)
+// يُخزَّن كل سجل بمعامل: { lat, lng, place, type, time, desc, createdAt }
+const firestoreMarkerKeys = {};  // firestoreId -> map key
+
+function loadFirestoreIncidents() {
+    const q = query(incidentsCol, orderBy('createdAt', 'desc'));
+    onSnapshot(q, (snapshot) => {
+        // أزل العلامات القديمة من Firestore عن الخريطة والقائمة
+        Object.entries(firestoreMarkerKeys).forEach(([fid, mapKey]) => {
+            if (markerRefs[mapKey]) {
+                map.removeLayer(markerRefs[mapKey]);
+                delete markerRefs[mapKey];
+            }
+        });
+        // أزل عناصر Firestore من القائمة (بس اللي عندها data-firestore-id)
+        listEl.querySelectorAll('[data-firestore-id]').forEach(el => el.remove());
+        // امسح المرجع القديم
+        Object.keys(firestoreMarkerKeys).forEach(k => delete firestoreMarkerKeys[k]);
+
+        snapshot.forEach((docSnap) => {
+            const inc = docSnap.data();
+            const mapKey = 'fs_' + docSnap.id;
+            firestoreMarkerKeys[docSnap.id] = mapKey;
+            addMarkerForIncident(inc, mapKey);
+            addListItemForIncident(inc, mapKey, docSnap.id);
+        });
+
+        // حدّث العداد
+        alertsCountEl.textContent = incidents.length + snapshot.size;
+    });
+}
+
+// ===== add-incident mode (للأدمين فقط) =====
+const mapEl = document.getElementById('south-map');
+const addBtn = document.getElementById('addIncidentToggle');
+const addBanner = document.getElementById('addModeBanner');
+const addModal = document.getElementById('addModal');
+const addForm = document.getElementById('addForm');
+const coordsLine = document.getElementById('coordsLine');
+const addCancelBtn = document.getElementById('addCancelBtn');
+
+let addMode = false;
+let pendingLatLng = null;
+
+function setAddMode(on) {
+    addMode = on;
+    mapEl.classList.toggle('add-mode', on);
+    addBanner.classList.toggle('show', on);
+    addBtn.classList.toggle('active', on);
+}
+
+addBtn.addEventListener('click', () => setAddMode(!addMode));
+
+map.on('click', (e) => {
+    if (!addMode || !isAdmin) return;
+    pendingLatLng = e.latlng;
+    coordsLine.textContent = `📍 الإحداثيات: ${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`;
+    addForm.reset();
+    const now = new Date();
+    document.getElementById('incTime').value =
+        'اليوم ' + now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+    addModal.classList.add('show');
+    setAddMode(false);
+});
+
+function closeAddModal() {
+    addModal.classList.remove('show');
+    pendingLatLng = null;
+}
+addCancelBtn.addEventListener('click', closeAddModal);
+addModal.addEventListener('click', (e) => { if (e.target === addModal) closeAddModal(); });
+
+addForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!pendingLatLng || !isAdmin) return;
+
+    const newInc = {
+        lat: pendingLatLng.lat,
+        lng: pendingLatLng.lng,
+        place: document.getElementById('incPlace').value.trim() || 'موقع غير محدد',
+        type: document.getElementById('incType').value,
+        time: document.getElementById('incTime').value.trim() || 'الآن',
+        desc: document.getElementById('incDesc').value.trim() || '—',
+        createdAt: serverTimestamp()
+    };
+
+    try {
+        await addDoc(incidentsCol, newInc);
+        // onSnapshot سيحدّث الخريطة والقائمة تلقائياً
+        map.setView([newInc.lat, newInc.lng], 13);
+        closeAddModal();
+    } catch (err) {
+        alert('فشل الحفظ على Firestore: ' + err.message);
+    }
+});
+
+// ===== Boot: Firebase auth then show admin tools if eligible =====
+initAdminAuth()
+    .then(({ user, isAdmin: admin }) => {
+        isAdmin = admin;
+        if (isAdmin) {
+            // أظهر زر الإضافة للأدمين فقط
+            addBtn.style.display = 'flex';
+            // أعد رسم القائمة لإضافة أزرار الحذف للأحداث الموجودة من Firestore
+        }
+        // حمّل الأحداث الحيّة من Firestore للجميع (قراءة)
+        loadFirestoreIncidents();
+    })
+    .catch((err) => {
+        console.error('Auth initialization failed:', err);
+        // حتى لو فشل Firebase نحمّل الأحداث بدون صلاحيات كتابة
+        loadFirestoreIncidents();
+    });
+</script>
 </body>
 </html>
