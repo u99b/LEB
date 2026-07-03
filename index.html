@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>الخريطة المباشرة | LebBreakingNews</title>
+<title>الخريطة المباشرة | LiveNews21</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <style>
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -254,7 +254,7 @@
 <!-- TOP BAR -->
 <div class="top-bar">
     <a href="#" class="brand">
-        <div class="brand-name">Leb<span class="accent">Breaking</span>News</div>
+        <div class="brand-name">Live<span class="accent">News</span>21</div>
     </a>
     <div class="top-right">
         <a href="https://t.me/LebBreakingNews" target="_blank" class="pill-btn report-btn">⚠️ <span class="label-text">بلّغ عن حدث</span></a>
@@ -385,17 +385,7 @@ Object.entries(categories).forEach(([key, cat]) => {
 });
 
 // ===== demo incidents — عدّل هالمصفوفة لتحديث الخريطة =====
-const incidents = [
-    { lat: 33.1194, lng: 35.1069, place: "الناقورة",     type: "airstrike",  time: "اليوم 09:40", desc: "غارة جوية استهدفت محيط المنطقة" },
-    { lat: 33.0942, lng: 35.1394, place: "مروحين",       type: "artillery",  time: "اليوم 10:05", desc: "قصف مدفعي على أطراف البلدة" },
-    { lat: 33.1064, lng: 35.3717, place: "عيتا الشعب",   type: "explosion",  time: "أمس 22:15",   desc: "دوي انفجار سمع في محيط البلدة" },
-    { lat: 33.1024, lng: 35.5719, place: "كفركلا",       type: "dronestrike",time: "أمس 18:30",   desc: "غارة مسيّرة استهدفت آلية" },
-    { lat: 33.1994, lng: 35.5769, place: "الخيام",       type: "jetflyover", time: "اليوم 07:50", desc: "تحليق مكثف للطيران الحربي" },
-    { lat: 33.3608, lng: 35.5911, place: "مرجعيون",      type: "dronefly",   time: "اليوم 06:20", desc: "تحليق مسيّرات استطلاع" },
-    { lat: 33.1214, lng: 35.4306, place: "بنت جبيل",     type: "artillery",  time: "أمس 20:00",   desc: "سقوط عدة قذائف مدفعية" },
-    { lat: 33.2704, lng: 35.2038, place: "صور",          type: "jetflyover", time: "اليوم 08:15", desc: "تحليق حربي على علو منخفض" },
-    { lat: 33.3789, lng: 35.4839, place: "النبطية",      type: "dronefly",   time: "اليوم 11:00", desc: "تحليق مسيّرة استطلاع فوق المنطقة" }
-];
+const incidents = [];
 
 // ===== map init: LIGHT clear style with visible town names =====
 const map = L.map('south-map', {
@@ -406,6 +396,31 @@ const map = L.map('south-map', {
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     subdomains: ['a','b','c']
+}).addTo(map);
+
+// ===== منطقة جنوب لبنان الحدودية (لبنان - إسرائيل) — خط أصفر =====
+const southZoneCoords = [
+    [33.095, 35.104], // الناقورة على الساحل
+    [33.100, 35.148], // علما الشعب
+    [33.107, 35.372], // عيتا الشعب
+    [33.096, 35.470], // كفركلا
+    [33.095, 35.591], // منطقة المطلة الحدودية
+    [33.245, 35.665], // شبعا
+    [33.300, 35.685], // مزارع شبعا
+    [33.430, 35.660], // حاصبيا
+    [33.470, 35.560], // راشيا / الجهة الشرقية
+    [33.470, 35.400], // شمال مرجعيون
+    [33.440, 35.260], // شمال النبطية باتجاه صيدا
+    [33.330, 35.190], // جنوب صيدا
+    [33.200, 35.140], // صور
+    [33.095, 35.104]  // إغلاق المضلع عند الناقورة
+];
+
+L.polygon(southZoneCoords, {
+    color: '#f5c518',
+    weight: 3,
+    fillColor: '#f5e28a',
+    fillOpacity: 0.35
 }).addTo(map);
 
 // custom zoom buttons
