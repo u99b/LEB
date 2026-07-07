@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>الخريطة المباشرة | LiveNews21</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css" />
 <style>
     * { margin:0; padding:0; box-sizing:border-box; }
 
@@ -84,6 +85,20 @@
     }
     .tool-btn:hover{ border-color:rgba(227,16,31,0.5); color:var(--red2); }
     .tool-btn.active{ background:linear-gradient(135deg,var(--red2),var(--red-dark)); border-color:transparent; color:#fff; }
+
+    /* ===== تسميات المحافظات/الأقضية على الخريطة ===== */
+    .adm1-label{
+        background:rgba(10,10,10,0.75); color:#fff; font-weight:900; font-size:.72rem;
+        padding:.15rem .5rem; border-radius:6px; border:1px solid rgba(255,255,255,0.25);
+        white-space:nowrap; box-shadow:none;
+    }
+    .adm1-label::before{ display:none; }
+    .adm2-label{
+        background:rgba(10,10,10,0.55); color:#ddd; font-weight:700; font-size:.62rem;
+        padding:.1rem .4rem; border-radius:5px; border:1px solid rgba(255,255,255,0.15);
+        white-space:nowrap; box-shadow:none;
+    }
+    .adm2-label::before{ display:none; }
 
     /* ===== bottom bar ===== */
     .bottom-bar{
@@ -267,6 +282,10 @@
     <div class="tool-btn" id="legendToggle" title="دليل الرموز">⚙️</div>
     <!-- زر الإضافة مخفي بالكامل للزوار العاديين — يظهر فقط للأدمين بعد التحقق -->
     <div class="tool-btn" id="addIncidentToggle" title="إضافة اعتداء يدويًا" style="display:none">➕</div>
+    <!-- زر رسم المنطقة (Zone) — أدمين فقط -->
+    <div class="tool-btn" id="drawZoneToggle" title="رسم منطقة" style="display:none">▱</div>
+    <!-- زر إظهار حدود المحافظات والأقضية (ADM1/ADM2) — للجميع -->
+    <div class="tool-btn" id="adminBoundariesToggle" title="حدود المحافظات والأقضية">🗺️</div>
     <a href="index.html" class="tool-btn" title="الرئيسية" style="text-decoration:none;">🏠</a>
 </div>
 
@@ -299,6 +318,34 @@
             <div class="modal-actions">
                 <button type="button" class="modal-btn secondary" id="addCancelBtn">إلغاء</button>
                 <button type="submit" class="modal-btn primary">نشر على الخريطة</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ZONE NAME/COLOR MODAL (بعد الرسم) -->
+<div class="modal-overlay" id="zoneModal">
+    <div class="modal-box">
+        <h3>تسمية المنطقة</h3>
+        <div class="modal-sub" id="zoneAutoCorrectNote">تم تصحيح الخط تلقائيًا ليطابق الحدود الرسمية</div>
+        <form id="zoneForm">
+            <div class="form-group">
+                <label>اسم المنطقة</label>
+                <input type="text" id="zoneLabel" placeholder="مثال: منطقة عمليات" required>
+            </div>
+            <div class="form-group">
+                <label>اللون</label>
+                <select id="zoneColor">
+                    <option value="#f0b429">🟡 أصفر/ذهبي</option>
+                    <option value="#e3101f">🔴 أحمر</option>
+                    <option value="#3b82f6">🔵 أزرق</option>
+                    <option value="#22c55e">🟢 أخضر</option>
+                    <option value="#8b5cf6">🟣 بنفسجي</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-btn secondary" id="zoneCancelBtn">إلغاء</button>
+                <button type="submit" class="modal-btn primary">حفظ المنطقة</button>
             </div>
         </form>
     </div>
@@ -339,6 +386,8 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
 <!-- ================================================================
      Firebase v9+ modular SDK (ES modules — no build step needed)
@@ -636,16 +685,242 @@ initAdminAuth()
         if (isAdmin) {
             // أظهر زر الإضافة للأدمين فقط
             addBtn.style.display = 'flex';
+            drawZoneToggle.style.display = 'flex';
             // أعد رسم القائمة لإضافة أزرار الحذف للأحداث الموجودة من Firestore
         }
         // حمّل الأحداث الحيّة من Firestore للجميع (قراءة)
         loadFirestoreIncidents();
+        loadZones();
     })
     .catch((err) => {
         console.error('Auth initialization failed:', err);
         // حتى لو فشل Firebase نحمّل الأحداث بدون صلاحيات كتابة
         loadFirestoreIncidents();
+        loadZones();
     });
+
+// ===================================================================
+// ===== Zones: رسم منطقة (أدمين) + تصحيح تلقائي + تخزين/عرض =====
+// ===================================================================
+const zonesCol = collection(db, 'zones');
+const zoneRefs = {}; // firestoreId -> [outlineLayer, fillLayer]
+const drawZoneToggle = document.getElementById('drawZoneToggle');
+const zoneModal = document.getElementById('zoneModal');
+const zoneForm = document.getElementById('zoneForm');
+const zoneCancelBtn = document.getElementById('zoneCancelBtn');
+const zoneAutoCorrectNote = document.getElementById('zoneAutoCorrectNote');
+
+let pendingZoneCoords = null; // [[lat,lng], ...] بعد التصحيح، جاهزة للحفظ
+
+// إعداد أدوات الرسم (Geoman) — تفعّل فقط عند الحاجة
+map.pm.setLang('en'); // ما عنده عربي جاهز؛ الواجهة عندنا مخصصة أصلاً
+map.pm.addControls({ position: 'topleft', drawMarker:false, drawCircleMarker:false,
+    drawPolyline:false, drawRectangle:false, drawCircle:false, drawText:false,
+    editMode:false, dragMode:false, cutPolygon:false, removalMode:false, rotateMode:false });
+// نخفي شريط أدوات Geoman الافتراضي — نتحكم بالرسم عبر زرنا الخاص فقط
+document.querySelectorAll('.leaflet-pm-toolbar').forEach(el => el.style.display = 'none');
+
+drawZoneToggle.addEventListener('click', () => {
+    if (!isAdmin) return;
+    map.pm.enableDraw('Polygon', {
+        snappable: true,
+        templineStyle: { color: '#f0b429' },
+        hintlineStyle: { color: '#f0b429', dashArray: [5, 5] },
+        pathOptions: { color: '#f0b429', weight: 3, fillOpacity: 0.1 }
+    });
+    drawZoneToggle.classList.add('active');
+});
+
+// ===== تحميل حدود لبنان الرسمية (ملف محلي ثابت — geoBoundaries ADM0) =====
+// المصدر: geoBoundaries.org (CC-BY 4.0) — حفظنا نسخة محلية عشان:
+//  1) ما نعتمد على API حي وقت التشغيل (سرعة + ما ينكسر لو النت أو CORS تعطّل)
+//  2) نستخدم حدود الدولة كاملة (ADM0) بدل التقسيمات الداخلية (أقضية)، لأن
+//     الهدف هو تصحيح الخط على *الحد الرسمي الخارجي* للبنان، مو الحدود الداخلية.
+let lebanonBoundaryLines = null;
+async function loadLebanonBoundaryLines() {
+    if (lebanonBoundaryLines) return lebanonBoundaryLines;
+    try {
+        const geoRes = await fetch('./lebanon-border.geojson');
+        const geoData = await geoRes.json();
+        lebanonBoundaryLines = turf.featureCollection(
+            geoData.features.flatMap(f => {
+                try { return [turf.polygonToLine(f)]; } catch (e) { return []; }
+            })
+        );
+    } catch (err) {
+        console.warn('تعذر تحميل حدود لبنان المرجعية — راح نكتفي بالتنعيم فقط:', err);
+        lebanonBoundaryLines = null;
+    }
+    return lebanonBoundaryLines;
+}
+// نبدأ التحميل بالخلفية من فتح الصفحة، عشان يكون جاهز وقت أول رسم
+loadLebanonBoundaryLines();
+
+// ===================================================================
+// ===== طبقات حدود المحافظات (ADM1) والأقضية (ADM2) — عرض بصري فقط =====
+// المصدر: geoBoundaries.org (CC-BY 4.0) — ملفات محلية ثابتة، نفس مصدر ADM0.
+// هاي الطبقة تجميلية/معلوماتية بس (تعرض الأسماء)، ومنفصلة تمامًا عن حدود
+// ADM0 المستخدمة بالتصحيح التلقائي (autoCorrectPolygon) فوق.
+// ===================================================================
+let adm1Layer = null;
+let adm2Layer = null;
+let adminBoundariesLoaded = false;
+let adminBoundariesVisible = false;
+const adminBoundariesToggle = document.getElementById('adminBoundariesToggle');
+
+async function loadAdminBoundaries() {
+    if (adminBoundariesLoaded) return;
+    adminBoundariesLoaded = true;
+    try {
+        const [adm1Res, adm2Res] = await Promise.all([
+            fetch('./lebanon-adm1.geojson'),
+            fetch('./lebanon-adm2.geojson')
+        ]);
+        const [adm1Data, adm2Data] = await Promise.all([adm1Res.json(), adm2Res.json()]);
+
+        // الأقضية (ADM2) — خط رفيع منقّط، تحت طبقة المحافظات
+        adm2Layer = L.geoJSON(adm2Data, {
+            style: { color:'#ffffff', weight:1.3, opacity:0.55, dashArray:'4,4', fillOpacity:0 },
+            onEachFeature: (feature, layer) => {
+                const name = feature.properties && feature.properties.shapeName;
+                if (name) {
+                    layer.bindTooltip(name, {
+                        permanent:true, direction:'center', className:'adm2-label'
+                    });
+                }
+            }
+        });
+
+        // المحافظات (ADM1) — خط أوضح وأثخن فوق الأقضية
+        adm1Layer = L.geoJSON(adm1Data, {
+            style: { color:'#f0b429', weight:2.4, opacity:0.9, fillOpacity:0 },
+            onEachFeature: (feature, layer) => {
+                const name = feature.properties && feature.properties.shapeName;
+                if (name) {
+                    layer.bindTooltip(name, {
+                        permanent:true, direction:'center', className:'adm1-label'
+                    });
+                }
+            }
+        });
+    } catch (err) {
+        console.warn('تعذر تحميل حدود المحافظات/الأقضية:', err);
+        adminBoundariesLoaded = false;
+    }
+}
+
+adminBoundariesToggle.addEventListener('click', async () => {
+    if (!adminBoundariesLoaded) await loadAdminBoundaries();
+    if (!adm1Layer || !adm2Layer) return; // فشل التحميل
+
+    adminBoundariesVisible = !adminBoundariesVisible;
+    adminBoundariesToggle.classList.toggle('active', adminBoundariesVisible);
+
+    if (adminBoundariesVisible) {
+        adm2Layer.addTo(map);
+        adm1Layer.addTo(map);
+    } else {
+        map.removeLayer(adm2Layer);
+        map.removeLayer(adm1Layer);
+    }
+});
+
+const SNAP_THRESHOLD_KM = 0.35; // إذا الخط قريب أقل من ٣٥٠ متر من حد رسمي، يلزّق عليه
+
+// ===== التصحيح التلقائي: تنعيم الخط + لزق (snap) على الحدود الرسمية إذا قريب =====
+async function autoCorrectPolygon(latlngPoints) {
+    let coords = latlngPoints.map(p => [p.lng, p.lat]);
+    const first = coords[0], last = coords[coords.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) coords.push(first);
+    if (coords.length < 4) return latlngPoints.map(p => [p.lat, p.lng]); // شكل صغير جداً، ما نلمسه
+
+    let poly;
+    try {
+        poly = turf.simplify(turf.polygon([coords]), { tolerance: 0.0006, highQuality: true });
+    } catch (e) {
+        return latlngPoints.map(p => [p.lat, p.lng]);
+    }
+
+    const lines = await loadLebanonBoundaryLines();
+    let snapped = false;
+    if (lines && lines.features.length) {
+        const newCoords = poly.geometry.coordinates[0].map((pt) => {
+            const point = turf.point(pt);
+            let best = null, bestDist = Infinity;
+            lines.features.forEach(line => {
+                const np = turf.nearestPointOnLine(line, point, { units: 'kilometers' });
+                if (np.properties.dist < bestDist) { bestDist = np.properties.dist; best = np; }
+            });
+            if (best && bestDist < SNAP_THRESHOLD_KM) { snapped = true; return best.geometry.coordinates; }
+            return pt;
+        });
+        poly = turf.polygon([newCoords]);
+    }
+
+    zoneAutoCorrectNote.textContent = snapped
+        ? 'تم تصحيح الخط تلقائيًا ليطابق الحدود الرسمية'
+        : 'تم تنعيم الخط (ما لكيت حد رسمي قريب بما فيه الكفاية للّزق)';
+
+    return poly.geometry.coordinates[0].map(([lng, lat]) => [lat, lng]);
+}
+
+// ===== عند إنهاء الأدمين رسم البوليجون =====
+map.on('pm:create', async (e) => {
+    if (!isAdmin || e.shape !== 'Polygon') return;
+    drawZoneToggle.classList.remove('active');
+
+    const rawLatLngs = e.layer.getLatLngs()[0];
+    map.removeLayer(e.layer); // نشيل المسودة، وبنرسم النسخة النهائية بعد الحفظ
+
+    zoneAutoCorrectNote.textContent = 'جاري التصحيح التلقائي...';
+    zoneModal.classList.add('show');
+    zoneForm.reset();
+
+    pendingZoneCoords = await autoCorrectPolygon(rawLatLngs);
+});
+
+function closeZoneModal() {
+    zoneModal.classList.remove('show');
+    pendingZoneCoords = null;
+}
+zoneCancelBtn.addEventListener('click', closeZoneModal);
+zoneModal.addEventListener('click', (e) => { if (e.target === zoneModal) closeZoneModal(); });
+
+zoneForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!pendingZoneCoords || !isAdmin) return;
+
+    const newZone = {
+        label: document.getElementById('zoneLabel').value.trim() || 'منطقة',
+        color: document.getElementById('zoneColor').value,
+        coords: pendingZoneCoords, // [[lat,lng], ...]
+        createdAt: serverTimestamp()
+    };
+
+    try {
+        await addDoc(zonesCol, newZone);
+        closeZoneModal();
+    } catch (err) {
+        alert('فشل حفظ المنطقة: ' + err.message);
+    }
+});
+
+// ===== رسم منطقة بنفس ستايل خط الحدود المزدوج (أبيض + ذهبي/ملون) =====
+function renderZone(zone, key) {
+    const color = zone.color || '#f0b429';
+    const outline = L.polygon(zone.coords, { color:'#ffffff', weight:5, opacity:0.9, fillOpacity:0, interactive:false }).addTo(map);
+    const fill = L.polygon(zone.coords, { color, weight:3, opacity:1, fillColor:color, fillOpacity:0.12, lineJoin:'round' }).addTo(map);
+    if (zone.label) fill.bindPopup(`<div class="pop-title">${zone.label}</div>`);
+    zoneRefs[key] = [outline, fill];
+}
+
+function loadZones() {
+    onSnapshot(query(zonesCol, orderBy('createdAt', 'desc')), (snapshot) => {
+        Object.values(zoneRefs).forEach(layers => layers.forEach(l => map.removeLayer(l)));
+        Object.keys(zoneRefs).forEach(k => delete zoneRefs[k]);
+        snapshot.forEach((docSnap) => renderZone(docSnap.data(), docSnap.id));
+    });
+}
 </script>
 </body>
 </html>
