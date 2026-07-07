@@ -276,13 +276,22 @@
     <!-- زر الإضافة مخفي بالكامل للزوار العاديين — يظهر فقط للأدمين بعد التحقق -->
     <div class="tool-btn" id="addIncidentToggle" title="إضافة اعتداء يدويًا" style="display:none">➕</div>
     <!-- زر رسم المنطقة (Zone) — أدمين فقط -->
-    <div class="tool-btn" id="drawZoneToggle" title="رسم منطقة" style="display:none">▱</div>
+    <div class="tool-btn" id="drawZoneToggle" title="رسم منطقة (يدوي)" style="display:none">▱</div>
+    <!-- زر رسم منطقة بالاعتماد على خط الحدود الرسمي (نقطة بداية + نهاية) — أدمين فقط -->
+    <div class="tool-btn" id="borderDrawToggle" title="رسم بالحدود (بداية/نهاية)" style="display:none">🛣️</div>
     <!-- زر إظهار حدود المحافظات والأقضية (ADM1/ADM2) — للجميع -->
     <a href="index.html" class="tool-btn" title="الرئيسية" style="text-decoration:none;">🏠</a>
 </div>
 
 <!-- ADD MODE BANNER -->
 <div class="add-mode-banner" id="addModeBanner">📍 دوس على المكان على الخريطة لتحدد موقع الاعتداء</div>
+
+<!-- BORDER-TRACE DRAW MODE BANNER -->
+<div class="add-mode-banner" id="borderModeBanner" style="display:flex; align-items:center; gap:.7rem;">
+    <span id="borderModeBannerText">📍 دوس نقطة البداية على الحد</span>
+    <button type="button" id="borderFinishBtn" style="display:none; background:#22c55e; color:#fff; border:none; border-radius:8px; padding:.35rem .8rem; font-weight:800; font-size:.75rem; cursor:pointer; white-space:nowrap;">✓ إنهاء الرسم</button>
+    <button type="button" id="borderCancelBtn" style="background:rgba(255,255,255,0.15); color:#fff; border:none; border-radius:8px; padding:.35rem .8rem; font-weight:800; font-size:.75rem; cursor:pointer; white-space:nowrap;">✕ إلغاء</button>
+</div>
 
 <!-- ADD INCIDENT MODAL -->
 <div class="modal-overlay" id="addModal">
@@ -412,7 +421,7 @@ const categories = {
     explosion:  { label: "تفجير",      color: "#dc2626", icon: svgIcons.burst,        radius: 500,  spin: false },
     airstrike:  { label: "غارة جوية",   color: "#7f1d1d", icon: svgIcons.plane,        radius: 900,  spin: true  },
     jetflyover: { label: "تحليق حربي",  color: "#3b82f6", icon: svgIcons.plane,        radius: 3500, spin: true  },
-    dronefly:   { label: "تحليق مسيرة", color: "#8b5cf6", icon: svgIcons.drone,        radius: 2200, spin: true  },
+    dronefly:   { label: "تحليق مسيرة", color: "#8b5cf6", icon: svgIcons.plane,        radius: 2200, spin: true  },
     dronestrike:{ label: "غارة مسيرة",  color: "#ec4899", icon: svgIcons.droneTarget,  radius: 900,  spin: false }
 };
 
@@ -642,7 +651,10 @@ function setAddMode(on) {
     addBtn.classList.toggle('active', on);
 }
 
-addBtn.addEventListener('click', () => setAddMode(!addMode));
+addBtn.addEventListener('click', () => {
+    if (typeof resetBorderDraw === 'function') resetBorderDraw(); // ما نخلي وضع "رسم بالحدود" مفعّل بنفس الوقت
+    setAddMode(!addMode);
+});
 
 map.on('click', (e) => {
     if (!addMode || !isAdmin) return;
@@ -695,6 +707,7 @@ initAdminAuth()
             // أظهر زر الإضافة للأدمين فقط
             addBtn.style.display = 'flex';
             drawZoneToggle.style.display = 'flex';
+            borderDrawToggle.style.display = 'flex';
             // أعد رسم القائمة لإضافة أزرار الحذف للأحداث الموجودة من Firestore
         }
         // حمّل الأحداث الحيّة من Firestore للجميع (قراءة)
@@ -731,6 +744,7 @@ document.querySelectorAll('.leaflet-pm-toolbar').forEach(el => el.style.display 
 
 drawZoneToggle.addEventListener('click', () => {
     if (!isAdmin) return;
+    resetBorderDraw(); // ما نخلي وضعين رسم مفعّلين سوا
     map.pm.enableDraw('Polygon', {
         snappable: true,
         templineStyle: { color: '#f0b429' },
@@ -751,11 +765,14 @@ async function loadLebanonBoundaryLines() {
     try {
         const geoRes = await fetch('./lebanon-border.geojson');
         const geoData = await geoRes.json();
-        lebanonBoundaryLines = turf.featureCollection(
+        const rawLines = turf.featureCollection(
             geoData.features.flatMap(f => {
                 try { return [turf.polygonToLine(f)]; } catch (e) { return []; }
             })
         );
+        // نفلطح أي MultiLineString لخطوط بسيطة (LineString) — turf.lineSlice
+        // (المستخدم لاحقًا بميزة "رسم بالحدود") ما بيشتغل إلا على LineString
+        lebanonBoundaryLines = turf.flatten(rawLines);
     } catch (err) {
         console.warn('تعذر تحميل حدود لبنان المرجعية — راح نكتفي بالتنعيم فقط:', err);
         lebanonBoundaryLines = null;
@@ -803,6 +820,138 @@ async function autoCorrectPolygon(latlngPoints) {
 
     return poly.geometry.coordinates[0].map(([lng, lat]) => [lat, lng]);
 }
+
+// ===================================================================
+// ===== رسم بالحدود: تحدّد نقطة بداية ونقطة نهاية بس، والأداة
+//        بترسم القطعة المطابقة تمامًا لخط حدود لبنان الرسمي بينهم
+//        (مو خط مستقيم وليس تقريب — نقاط الحد الحقيقية Vertex by Vertex).
+//        بعدين تكمّل رسم باقي المنطقة يدويًا (نقاط داخلية) وتضغط "إنهاء".
+// ===================================================================
+const borderDrawToggle = document.getElementById('borderDrawToggle');
+const borderModeBanner = document.getElementById('borderModeBanner');
+const borderModeBannerText = document.getElementById('borderModeBannerText');
+const borderFinishBtn = document.getElementById('borderFinishBtn');
+const borderCancelBtn = document.getElementById('borderCancelBtn');
+
+const BORDER_PICK_THRESHOLD_KM = 3; // حتى تنلزّق نقطة الكبس على الحد لازم تكون بأقل من ٣ كم منه
+
+let borderDrawState = null; // null | {step:'start'} | {step:'end', startLatLng} | {step:'extend', tracedLatLngs, extraPoints}
+let borderTempLayer = null;
+let borderStartMarker = null;
+let borderEndMarker = null;
+
+function resetBorderDraw() {
+    if (borderTempLayer) { map.removeLayer(borderTempLayer); borderTempLayer = null; }
+    if (borderStartMarker) { map.removeLayer(borderStartMarker); borderStartMarker = null; }
+    if (borderEndMarker) { map.removeLayer(borderEndMarker); borderEndMarker = null; }
+    borderDrawState = null;
+    borderModeBanner.classList.remove('show');
+    borderFinishBtn.style.display = 'none';
+    borderDrawToggle.classList.remove('active');
+    mapEl.classList.remove('add-mode');
+}
+
+// نلاقي أقرب نقطة على خط الحدود الرسمي لنقطة الكبس (إذا كانت قريبة كفاية)
+function snapToBorder(latlng, lines) {
+    if (!lines || !lines.features.length) return latlng;
+    const clickPt = turf.point([latlng.lng, latlng.lat]);
+    let best = null, bestDist = Infinity;
+    lines.features.forEach(line => {
+        const np = turf.nearestPointOnLine(line, clickPt, { units: 'kilometers' });
+        if (np.properties.dist < bestDist) { bestDist = np.properties.dist; best = np; }
+    });
+    if (best && bestDist < BORDER_PICK_THRESHOLD_KM) {
+        return L.latLng(best.geometry.coordinates[1], best.geometry.coordinates[0]);
+    }
+    return latlng;
+}
+
+// نقتطع القطعة الحقيقية من خط الحدود الواصلة بين نقطة البداية والنهاية
+function traceBorderSegment(startLatLng, endLatLng, lines) {
+    if (!lines || !lines.features.length) return [startLatLng, endLatLng];
+    const startPt = turf.point([startLatLng.lng, startLatLng.lat]);
+    const endPt = turf.point([endLatLng.lng, endLatLng.lat]);
+    let bestLine = null, bestScore = Infinity;
+    lines.features.forEach(line => {
+        const d1 = turf.nearestPointOnLine(line, startPt, { units: 'kilometers' }).properties.dist;
+        const d2 = turf.nearestPointOnLine(line, endPt, { units: 'kilometers' }).properties.dist;
+        const score = d1 + d2;
+        if (score < bestScore) { bestScore = score; bestLine = line; }
+    });
+    if (!bestLine) return [startLatLng, endLatLng];
+    try {
+        const sliced = turf.lineSlice(startPt, endPt, bestLine);
+        const coords = sliced.geometry.coordinates.map(([lng, lat]) => L.latLng(lat, lng));
+        return coords.length >= 2 ? coords : [startLatLng, endLatLng];
+    } catch (e) {
+        return [startLatLng, endLatLng];
+    }
+}
+
+borderDrawToggle.addEventListener('click', async () => {
+    if (!isAdmin) return;
+    if (borderDrawState) { resetBorderDraw(); return; } // ضغطة تانية = إلغاء
+    if (typeof setAddMode === 'function') setAddMode(false); // ما نخلي وضع إضافة الحدث مفعّل بنفس الوقت
+    map.pm.disableDraw('Polygon'); // ما نخلي وضعين رسم مفعّلين سوا
+    drawZoneToggle.classList.remove('active');
+
+    borderDrawState = { step: 'start' };
+    borderDrawToggle.classList.add('active');
+    mapEl.classList.add('add-mode');
+    borderModeBannerText.textContent = '📍 دوس نقطة البداية على الحد';
+    borderFinishBtn.style.display = 'none';
+    borderModeBanner.classList.add('show');
+
+    await loadLebanonBoundaryLines(); // تأكيد إنه محمّل قبل أول كبسة
+});
+
+borderCancelBtn.addEventListener('click', resetBorderDraw);
+
+borderFinishBtn.addEventListener('click', async () => {
+    if (!borderDrawState || borderDrawState.step !== 'extend') return;
+    const fullLatLngs = [...borderDrawState.tracedLatLngs, ...borderDrawState.extraPoints];
+    if (fullLatLngs.length < 3) {
+        alert('لازم على الأقل نقطة وحدة إضافية غير نقطتي البداية والنهاية لتصير منطقة مغلقة.');
+        return;
+    }
+    resetBorderDraw();
+    zoneAutoCorrectNote.textContent = 'جاري التصحيح التلقائي...';
+    zoneModal.classList.add('show');
+    zoneForm.reset();
+    pendingZoneCoords = await autoCorrectPolygon(fullLatLngs);
+});
+
+map.on('click', async (e) => {
+    if (!borderDrawState || !isAdmin) return;
+    const lines = await loadLebanonBoundaryLines();
+    const snapped = snapToBorder(e.latlng, lines);
+
+    if (borderDrawState.step === 'start') {
+        borderDrawState.startLatLng = snapped;
+        borderStartMarker = L.circleMarker(snapped, { radius: 7, color: '#fff', weight: 2, fillColor: '#f0b429', fillOpacity: 1 }).addTo(map);
+        borderDrawState.step = 'end';
+        borderModeBannerText.textContent = '📍 هلق دوس نقطة النهاية على الحد';
+
+    } else if (borderDrawState.step === 'end') {
+        borderDrawState.endLatLng = snapped;
+        borderEndMarker = L.circleMarker(snapped, { radius: 7, color: '#fff', weight: 2, fillColor: '#f0b429', fillOpacity: 1 }).addTo(map);
+
+        const traced = traceBorderSegment(borderDrawState.startLatLng, borderDrawState.endLatLng, lines);
+        borderDrawState.tracedLatLngs = traced;
+        borderDrawState.extraPoints = [];
+        borderTempLayer = L.polyline(traced, { color: '#f0b429', weight: 4 }).addTo(map);
+
+        borderDrawState.step = 'extend';
+        borderModeBannerText.textContent = '✏️ كمّل دوس نقاط لإغلاق المنطقة';
+        borderFinishBtn.style.display = 'inline-block';
+
+    } else if (borderDrawState.step === 'extend') {
+        borderDrawState.extraPoints.push(snapped);
+        const full = [...borderDrawState.tracedLatLngs, ...borderDrawState.extraPoints];
+        if (borderTempLayer) map.removeLayer(borderTempLayer);
+        borderTempLayer = L.polyline(full, { color: '#f0b429', weight: 4 }).addTo(map);
+    }
+});
 
 // ===== عند إنهاء الأدمين رسم البوليجون =====
 map.on('pm:create', async (e) => {
