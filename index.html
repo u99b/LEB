@@ -86,20 +86,6 @@
     .tool-btn:hover{ border-color:rgba(227,16,31,0.5); color:var(--red2); }
     .tool-btn.active{ background:linear-gradient(135deg,var(--red2),var(--red-dark)); border-color:transparent; color:#fff; }
 
-    /* ===== تسميات المحافظات/الأقضية على الخريطة ===== */
-    .adm1-label{
-        background:rgba(10,10,10,0.75); color:#fff; font-weight:900; font-size:.72rem;
-        padding:.15rem .5rem; border-radius:6px; border:1px solid rgba(255,255,255,0.25);
-        white-space:nowrap; box-shadow:none;
-    }
-    .adm1-label::before{ display:none; }
-    .adm2-label{
-        background:rgba(10,10,10,0.55); color:#ddd; font-weight:700; font-size:.62rem;
-        padding:.1rem .4rem; border-radius:5px; border:1px solid rgba(255,255,255,0.15);
-        white-space:nowrap; box-shadow:none;
-    }
-    .adm2-label::before{ display:none; }
-
     /* ===== bottom bar ===== */
     .bottom-bar{
         position:fixed; bottom:0; left:0; right:0; z-index:500;
@@ -237,7 +223,14 @@
         display:flex; align-items:center; justify-content:center;
     }
     .marker-core svg{ width:14px; height:14px; }
+    .marker-core svg.spin-icon{ animation:spinIcon 3.2s linear infinite; transform-origin:center; }
     @keyframes pulseRing{ 0%{ transform:scale(1); opacity:.4;} 100%{ transform:scale(2.5); opacity:0;} }
+    @keyframes spinIcon{ from{ transform:rotate(0deg);} to{ transform:rotate(360deg);} }
+
+    /* ===== دائرة نطاق الخطر الجغرافية (نصف قطرها بالأمتار الحقيقية،
+         فبتكبر بصريًا وبتتضح تلقائيًا كل ما قرّبت/زوّمت) ===== */
+    .danger-circle{ animation:dangerPulse 2.6s ease-in-out infinite; }
+    @keyframes dangerPulse{ 0%,100%{ fill-opacity:.18; } 50%{ fill-opacity:.32; } }
 
     /* ===== custom zoom stack ===== */
     .zoom-stack{
@@ -285,7 +278,6 @@
     <!-- زر رسم المنطقة (Zone) — أدمين فقط -->
     <div class="tool-btn" id="drawZoneToggle" title="رسم منطقة" style="display:none">▱</div>
     <!-- زر إظهار حدود المحافظات والأقضية (ADM1/ADM2) — للجميع -->
-    <div class="tool-btn" id="adminBoundariesToggle" title="حدود المحافظات والأقضية">🗺️</div>
     <a href="index.html" class="tool-btn" title="الرئيسية" style="text-decoration:none;">🏠</a>
 </div>
 
@@ -416,12 +408,12 @@ const svgIcons = {
 };
 
 const categories = {
-    artillery:  { label: "قصف مدفعي",  color: "#f97316", icon: svgIcons.target },
-    explosion:  { label: "تفجير",      color: "#dc2626", icon: svgIcons.burst },
-    airstrike:  { label: "غارة جوية",   color: "#7f1d1d", icon: svgIcons.plane },
-    jetflyover: { label: "تحليق حربي",  color: "#3b82f6", icon: svgIcons.plane },
-    dronefly:   { label: "تحليق مسيرة", color: "#8b5cf6", icon: svgIcons.drone },
-    dronestrike:{ label: "غارة مسيرة",  color: "#ec4899", icon: svgIcons.droneTarget }
+    artillery:  { label: "قصف مدفعي",  color: "#f97316", icon: svgIcons.target,       radius: 700,  spin: false },
+    explosion:  { label: "تفجير",      color: "#dc2626", icon: svgIcons.burst,        radius: 500,  spin: false },
+    airstrike:  { label: "غارة جوية",   color: "#7f1d1d", icon: svgIcons.plane,        radius: 900,  spin: true  },
+    jetflyover: { label: "تحليق حربي",  color: "#3b82f6", icon: svgIcons.plane,        radius: 3500, spin: true  },
+    dronefly:   { label: "تحليق مسيرة", color: "#8b5cf6", icon: svgIcons.drone,        radius: 2200, spin: true  },
+    dronestrike:{ label: "غارة مسيرة",  color: "#ec4899", icon: svgIcons.droneTarget,  radius: 900,  spin: false }
 };
 
 // populate the "نوع الحدث" select in the add-incident form
@@ -453,9 +445,9 @@ const map = L.map('south-map', {
 
 map.fitBounds(LEB_ISR_BOUNDS);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
     maxZoom: 19,
-    subdomains: ['a','b','c']
+    subdomains: ['a','b','c','d']
 }).addTo(map);
 
 // custom zoom buttons
@@ -471,18 +463,34 @@ let isAdmin = false;
 
 function addMarkerForIncident(inc, idx) {
     const cat = categories[inc.type] || categories['explosion'];
+    const iconHtml = cat.spin ? cat.icon.replace('<svg ', '<svg class="spin-icon" ') : cat.icon;
     const icon = L.divIcon({
         className: '',
         html: `
             <div class="pulse-wrap2">
                 <div class="pulse-ring2" style="background:${cat.color}"></div>
-                <div class="marker-core" style="background:${cat.color}">${cat.icon}</div>
+                <div class="marker-core" style="background:${cat.color}">${iconHtml}</div>
             </div>
         `,
         iconSize: [36, 36],
         iconAnchor: [18, 18],
         popupAnchor: [0, -18]
     });
+
+    // دائرة نطاق حقيقية (نصف قطرها بالأمتار على أرض الواقع) — تكبر بصريًا
+    // تلقائيًا كل ما زوّمت / قرّبت من مكانها، لأنها مرتبطة بالإحداثيات الجغرافية
+    // مو بحجم بكسل ثابت متل الدوائر القديمة.
+    const circle = L.circle([inc.lat, inc.lng], {
+        radius: cat.radius,
+        color: cat.color,
+        weight: 1.5,
+        opacity: 0.8,
+        fillColor: cat.color,
+        fillOpacity: 0.2,
+        className: 'danger-circle',
+        interactive: false
+    }).addTo(map);
+
     const marker = L.marker([inc.lat, inc.lng], { icon }).addTo(map);
     marker.bindPopup(`
         <div class="pop-title">${cat.icon} ${cat.label}</div>
@@ -490,7 +498,7 @@ function addMarkerForIncident(inc, idx) {
         <div>${inc.desc}</div>
         <div class="pop-time">${inc.time}</div>
     `);
-    markerRefs[idx] = marker;
+    markerRefs[idx] = { marker, circle };
 }
 
 function addListItemForIncident(inc, idx, firestoreId) {
@@ -539,7 +547,7 @@ function addListItemForIncident(inc, idx, firestoreId) {
         if (e.target.classList.contains('del-inc-btn')) return;
         closeDrawer();
         map.setView([inc.lat, inc.lng], 13);
-        if (markerRefs[idx]) markerRefs[idx].openPopup();
+        if (markerRefs[idx]) markerRefs[idx].marker.openPopup();
     });
     listEl.appendChild(item);
 }
@@ -592,7 +600,8 @@ function loadFirestoreIncidents() {
         // أزل العلامات القديمة من Firestore عن الخريطة والقائمة
         Object.entries(firestoreMarkerKeys).forEach(([fid, mapKey]) => {
             if (markerRefs[mapKey]) {
-                map.removeLayer(markerRefs[mapKey]);
+                map.removeLayer(markerRefs[mapKey].marker);
+                map.removeLayer(markerRefs[mapKey].circle);
                 delete markerRefs[mapKey];
             }
         });
@@ -756,75 +765,6 @@ async function loadLebanonBoundaryLines() {
 // نبدأ التحميل بالخلفية من فتح الصفحة، عشان يكون جاهز وقت أول رسم
 loadLebanonBoundaryLines();
 
-// ===================================================================
-// ===== طبقات حدود المحافظات (ADM1) والأقضية (ADM2) — عرض بصري فقط =====
-// المصدر: geoBoundaries.org (CC-BY 4.0) — ملفات محلية ثابتة، نفس مصدر ADM0.
-// هاي الطبقة تجميلية/معلوماتية بس (تعرض الأسماء)، ومنفصلة تمامًا عن حدود
-// ADM0 المستخدمة بالتصحيح التلقائي (autoCorrectPolygon) فوق.
-// ===================================================================
-let adm1Layer = null;
-let adm2Layer = null;
-let adminBoundariesLoaded = false;
-let adminBoundariesVisible = false;
-const adminBoundariesToggle = document.getElementById('adminBoundariesToggle');
-
-async function loadAdminBoundaries() {
-    if (adminBoundariesLoaded) return;
-    adminBoundariesLoaded = true;
-    try {
-        const [adm1Res, adm2Res] = await Promise.all([
-            fetch('./lebanon-adm1.geojson'),
-            fetch('./lebanon-adm2.geojson')
-        ]);
-        const [adm1Data, adm2Data] = await Promise.all([adm1Res.json(), adm2Res.json()]);
-
-        // الأقضية (ADM2) — خط رفيع منقّط، تحت طبقة المحافظات
-        adm2Layer = L.geoJSON(adm2Data, {
-            style: { color:'#ffffff', weight:1.3, opacity:0.55, dashArray:'4,4', fillOpacity:0 },
-            onEachFeature: (feature, layer) => {
-                const name = feature.properties && feature.properties.shapeName;
-                if (name) {
-                    layer.bindTooltip(name, {
-                        permanent:true, direction:'center', className:'adm2-label'
-                    });
-                }
-            }
-        });
-
-        // المحافظات (ADM1) — خط أوضح وأثخن فوق الأقضية
-        adm1Layer = L.geoJSON(adm1Data, {
-            style: { color:'#f0b429', weight:2.4, opacity:0.9, fillOpacity:0 },
-            onEachFeature: (feature, layer) => {
-                const name = feature.properties && feature.properties.shapeName;
-                if (name) {
-                    layer.bindTooltip(name, {
-                        permanent:true, direction:'center', className:'adm1-label'
-                    });
-                }
-            }
-        });
-    } catch (err) {
-        console.warn('تعذر تحميل حدود المحافظات/الأقضية:', err);
-        adminBoundariesLoaded = false;
-    }
-}
-
-adminBoundariesToggle.addEventListener('click', async () => {
-    if (!adminBoundariesLoaded) await loadAdminBoundaries();
-    if (!adm1Layer || !adm2Layer) return; // فشل التحميل
-
-    adminBoundariesVisible = !adminBoundariesVisible;
-    adminBoundariesToggle.classList.toggle('active', adminBoundariesVisible);
-
-    if (adminBoundariesVisible) {
-        adm2Layer.addTo(map);
-        adm1Layer.addTo(map);
-    } else {
-        map.removeLayer(adm2Layer);
-        map.removeLayer(adm1Layer);
-    }
-});
-
 const SNAP_THRESHOLD_KM = 0.35; // إذا الخط قريب أقل من ٣٥٠ متر من حد رسمي، يلزّق عليه
 
 // ===== التصحيح التلقائي: تنعيم الخط + لزق (snap) على الحدود الرسمية إذا قريب =====
@@ -910,7 +850,33 @@ function renderZone(zone, key) {
     const color = zone.color || '#f0b429';
     const outline = L.polygon(zone.coords, { color:'#ffffff', weight:5, opacity:0.9, fillOpacity:0, interactive:false }).addTo(map);
     const fill = L.polygon(zone.coords, { color, weight:3, opacity:1, fillColor:color, fillOpacity:0.12, lineJoin:'round' }).addTo(map);
-    if (zone.label) fill.bindPopup(`<div class="pop-title">${zone.label}</div>`);
+
+    const popupHtml = `
+        ${zone.label ? `<div class="pop-title">${zone.label}</div>` : ''}
+        ${isAdmin ? `<button type="button" class="zone-delete-btn" data-zone-id="${key}"
+            style="margin-top:.5rem; width:100%; padding:.45rem .7rem; border:none; border-radius:8px;
+            background:var(--red2); color:#fff; font-weight:800; font-size:.8rem; cursor:pointer;">
+            🗑️ حذف المنطقة</button>` : ''}
+    `;
+    if (zone.label || isAdmin) {
+        fill.bindPopup(popupHtml);
+        if (isAdmin) {
+            fill.on('popupopen', () => {
+                const btn = document.querySelector(`.zone-delete-btn[data-zone-id="${key}"]`);
+                if (btn) {
+                    btn.addEventListener('click', async () => {
+                        if (!confirm('حذف هالمنطقة نهائيًا؟')) return;
+                        try {
+                            await deleteDoc(doc(db, 'zones', key));
+                            map.closePopup();
+                        } catch (err) {
+                            alert('فشل حذف المنطقة: ' + err.message);
+                        }
+                    });
+                }
+            });
+        }
+    }
     zoneRefs[key] = [outline, fill];
 }
 
