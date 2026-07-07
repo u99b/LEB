@@ -227,6 +227,21 @@
     @keyframes pulseRing{ 0%{ transform:scale(1); opacity:.4;} 100%{ transform:scale(2.5); opacity:0;} }
     @keyframes spinIcon{ from{ transform:rotate(0deg);} to{ transform:rotate(360deg);} }
 
+    /* ===== طيار/مسيّرة تدور فعليًا على محيط دائرة الخطر نفسها ===== */
+    .orbit-wrap{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; }
+    .orbit-rotor{
+        position:absolute; inset:0; transform-origin:50% 50%;
+        animation-name:orbitSpin; animation-timing-function:linear; animation-iteration-count:infinite;
+    }
+    .orbit-plane{
+        position:absolute; top:0; left:50%; width:22px; height:22px;
+        transform:translate(-50%,-50%) rotate(90deg);
+        border-radius:50%; border:2px solid #fff; display:flex; align-items:center; justify-content:center;
+        box-shadow:0 0 8px rgba(0,0,0,.45);
+    }
+    .orbit-plane svg{ width:14px; height:14px; }
+    @keyframes orbitSpin{ from{ transform:rotate(0deg);} to{ transform:rotate(360deg);} }
+
     /* ===== دائرة نطاق الخطر الجغرافية (نصف قطرها بالأمتار الحقيقية،
          فبتكبر بصريًا وبتتضح تلقائيًا كل ما قرّبت/زوّمت) ===== */
     .danger-circle{ animation:dangerPulse 2.6s ease-in-out infinite; }
@@ -419,9 +434,9 @@ const svgIcons = {
 const categories = {
     artillery:  { label: "قصف مدفعي",  color: "#f97316", icon: svgIcons.target,       radius: 700,  spin: false },
     explosion:  { label: "تفجير",      color: "#dc2626", icon: svgIcons.burst,        radius: 500,  spin: false },
-    airstrike:  { label: "غارة جوية",   color: "#7f1d1d", icon: svgIcons.plane,        radius: 900,  spin: true  },
-    jetflyover: { label: "تحليق حربي",  color: "#3b82f6", icon: svgIcons.plane,        radius: 3500, spin: true  },
-    dronefly:   { label: "تحليق مسيرة", color: "#8b5cf6", icon: svgIcons.plane,        radius: 2200, spin: true  },
+    airstrike:  { label: "غارة جوية",   color: "#7f1d1d", icon: svgIcons.plane,        radius: 900,  spin: true, orbitSpeed: 5  },
+    jetflyover: { label: "تحليق حربي",  color: "#3b82f6", icon: svgIcons.plane,        radius: 3500, spin: true, orbitSpeed: 9  },
+    dronefly:   { label: "تحليق مسيرة", color: "#8b5cf6", icon: svgIcons.plane,        radius: 2200, spin: true, orbitSpeed: 12 },
     dronestrike:{ label: "غارة مسيرة",  color: "#ec4899", icon: svgIcons.droneTarget,  radius: 900,  spin: false }
 };
 
@@ -470,15 +485,60 @@ const alertsCountEl = document.getElementById('alertsCount');
 // ===== admin state (populated after Firebase auth resolves) =====
 let isAdmin = false;
 
+// نحسب نقطة على بعد مسافة معيّنة بالأمتار وباتجاه (bearing) معيّن من نقطة جغرافية
+// (معادلة تقريبية كافية لأغراض الرسم البصري على الخريطة)
+function destPoint(lat, lng, distanceMeters, bearingDeg) {
+    const R = 6378137;
+    const brng = bearingDeg * Math.PI / 180;
+    const lat1 = lat * Math.PI / 180, lng1 = lng * Math.PI / 180;
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distanceMeters / R) + Math.cos(lat1) * Math.sin(distanceMeters / R) * Math.cos(brng));
+    const lng2 = lng1 + Math.atan2(Math.sin(brng) * Math.sin(distanceMeters / R) * Math.cos(lat1), Math.cos(distanceMeters / R) - Math.sin(lat1) * Math.sin(lat2));
+    return [lat2 * 180 / Math.PI, lng2 * 180 / Math.PI];
+}
+
+// نحسب نصف قطر الدائرة بالبكسل على الشاشة حسب مستوى الزوم الحالي
+function circleRadiusInPixels(lat, lng, radiusMeters) {
+    const center = map.latLngToLayerPoint([lat, lng]);
+    const edge = map.latLngToLayerPoint(destPoint(lat, lng, radiusMeters, 0));
+    return center.distanceTo(edge);
+}
+
+function buildOrbitIcon(cat, diameterPx) {
+    return L.divIcon({
+        className: '',
+        html: `
+            <div class="orbit-wrap" style="width:${diameterPx}px; height:${diameterPx}px;">
+                <div class="orbit-rotor" style="animation-duration:${cat.orbitSpeed || 8}s;">
+                    <div class="orbit-plane" style="background:${cat.color}">${cat.icon}</div>
+                </div>
+            </div>
+        `,
+        iconSize: [diameterPx, diameterPx],
+        iconAnchor: [diameterPx / 2, diameterPx / 2]
+    });
+}
+
+const orbitMarkers = {}; // idx -> {marker, lat, lng, radiusMeters, cat}
+
+function refreshOrbitMarker(idx) {
+    const o = orbitMarkers[idx];
+    if (!o) return;
+    const diameterPx = circleRadiusInPixels(o.lat, o.lng, o.radiusMeters) * 2;
+    o.marker.setIcon(buildOrbitIcon(o.cat, diameterPx));
+}
+
+map.on('zoomend', () => {
+    Object.keys(orbitMarkers).forEach(refreshOrbitMarker);
+});
+
 function addMarkerForIncident(inc, idx) {
     const cat = categories[inc.type] || categories['explosion'];
-    const iconHtml = cat.spin ? cat.icon.replace('<svg ', '<svg class="spin-icon" ') : cat.icon;
     const icon = L.divIcon({
         className: '',
         html: `
             <div class="pulse-wrap2">
                 <div class="pulse-ring2" style="background:${cat.color}"></div>
-                <div class="marker-core" style="background:${cat.color}">${iconHtml}</div>
+                <div class="marker-core" style="background:${cat.color}">${cat.icon}</div>
             </div>
         `,
         iconSize: [36, 36],
@@ -507,7 +567,19 @@ function addMarkerForIncident(inc, idx) {
         <div>${inc.desc}</div>
         <div class="pop-time">${inc.time}</div>
     `);
-    markerRefs[idx] = { marker, circle };
+
+    let orbitMarker = null;
+    // للطيران/المسيّرة: أيقونة طيارة صغيرة تدور فعليًا على محيط دائرة الخطر نفسها
+    if (cat.spin) {
+        const diameterPx = circleRadiusInPixels(inc.lat, inc.lng, cat.radius) * 2;
+        orbitMarker = L.marker([inc.lat, inc.lng], {
+            icon: buildOrbitIcon(cat, diameterPx),
+            interactive: false
+        }).addTo(map);
+        orbitMarkers[idx] = { marker: orbitMarker, lat: inc.lat, lng: inc.lng, radiusMeters: cat.radius, cat };
+    }
+
+    markerRefs[idx] = { marker, circle, orbitMarker };
 }
 
 function addListItemForIncident(inc, idx, firestoreId) {
@@ -611,7 +683,9 @@ function loadFirestoreIncidents() {
             if (markerRefs[mapKey]) {
                 map.removeLayer(markerRefs[mapKey].marker);
                 map.removeLayer(markerRefs[mapKey].circle);
+                if (markerRefs[mapKey].orbitMarker) map.removeLayer(markerRefs[mapKey].orbitMarker);
                 delete markerRefs[mapKey];
+                delete orbitMarkers[mapKey];
             }
         });
         // أزل عناصر Firestore من القائمة (بس اللي عندها data-firestore-id)
@@ -836,9 +910,17 @@ const borderCancelBtn = document.getElementById('borderCancelBtn');
 const BORDER_PICK_THRESHOLD_KM = 3; // حتى تنلزّق نقطة الكبس على الحد لازم تكون بأقل من ٣ كم منه
 
 let borderDrawState = null; // null | {step:'start'} | {step:'end', startLatLng} | {step:'extend', tracedLatLngs, extraPoints}
-let borderTempLayer = null;
+let borderTempLayer = null; // L.layerGroup([outline, line]) — نفس ستايل الخط المزدوج (هالة بيضا + لون فوقها)
 let borderStartMarker = null;
 let borderEndMarker = null;
+
+// يرسم/يحدّث خط المعاينة بتأثير "توهج" أصفر: هالة صفرا شفافة وأعرض تحت + خط أصفر كامل فوقها
+function drawBorderPreview(latlngs) {
+    if (borderTempLayer) map.removeLayer(borderTempLayer);
+    const glow = L.polyline(latlngs, { color: '#f0b429', weight: 12, opacity: 0.35, lineJoin: 'round' });
+    const line = L.polyline(latlngs, { color: '#f0b429', weight: 4, opacity: 1, lineJoin: 'round' });
+    borderTempLayer = L.layerGroup([glow, line]).addTo(map);
+}
 
 function resetBorderDraw() {
     if (borderTempLayer) { map.removeLayer(borderTempLayer); borderTempLayer = null; }
@@ -939,7 +1021,7 @@ map.on('click', async (e) => {
         const traced = traceBorderSegment(borderDrawState.startLatLng, borderDrawState.endLatLng, lines);
         borderDrawState.tracedLatLngs = traced;
         borderDrawState.extraPoints = [];
-        borderTempLayer = L.polyline(traced, { color: '#f0b429', weight: 4 }).addTo(map);
+        drawBorderPreview(traced);
 
         borderDrawState.step = 'extend';
         borderModeBannerText.textContent = '✏️ كمّل دوس نقاط لإغلاق المنطقة';
@@ -948,8 +1030,7 @@ map.on('click', async (e) => {
     } else if (borderDrawState.step === 'extend') {
         borderDrawState.extraPoints.push(snapped);
         const full = [...borderDrawState.tracedLatLngs, ...borderDrawState.extraPoints];
-        if (borderTempLayer) map.removeLayer(borderTempLayer);
-        borderTempLayer = L.polyline(full, { color: '#f0b429', weight: 4 }).addTo(map);
+        drawBorderPreview(full);
     }
 });
 
@@ -982,7 +1063,9 @@ zoneForm.addEventListener('submit', async (e) => {
     const newZone = {
         label: document.getElementById('zoneLabel').value.trim() || 'منطقة',
         color: document.getElementById('zoneColor').value,
-        coords: pendingZoneCoords, // [[lat,lng], ...]
+        // Firestore ما بيدعم nested arrays (array of arrays)، فلازم نحوّل كل نقطة
+        // من [lat,lng] لـ {lat,lng} قبل الحفظ
+        coords: pendingZoneCoords.map(([lat, lng]) => ({ lat, lng })),
         createdAt: serverTimestamp()
     };
 
@@ -997,8 +1080,8 @@ zoneForm.addEventListener('submit', async (e) => {
 // ===== رسم منطقة بنفس ستايل خط الحدود المزدوج (أبيض + ذهبي/ملون) =====
 function renderZone(zone, key) {
     const color = zone.color || '#f0b429';
-    const outline = L.polygon(zone.coords, { color:'#ffffff', weight:5, opacity:0.9, fillOpacity:0, interactive:false }).addTo(map);
-    const fill = L.polygon(zone.coords, { color, weight:3, opacity:1, fillColor:color, fillOpacity:0.12, lineJoin:'round' }).addTo(map);
+    const glow = L.polygon(zone.coords, { color, weight:12, opacity:0.35, fillOpacity:0, interactive:false }).addTo(map);
+    const fill = L.polygon(zone.coords, { color, weight:4, opacity:1, fillColor:color, fillOpacity:0.15, lineJoin:'round' }).addTo(map);
 
     const popupHtml = `
         ${zone.label ? `<div class="pop-title">${zone.label}</div>` : ''}
@@ -1026,7 +1109,7 @@ function renderZone(zone, key) {
             });
         }
     }
-    zoneRefs[key] = [outline, fill];
+    zoneRefs[key] = [glow, fill];
 }
 
 function loadZones() {
